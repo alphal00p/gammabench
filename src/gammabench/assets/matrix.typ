@@ -20,6 +20,25 @@
     str(calc.round(value / scale, digits: 2)) + " " + suffix
   }
 }
+// A failed capture can retain a metric definition without having a value.
+// Count it as evidence, while keeping zero and partial measured captures distinct.
+#let matrix-has-measurement(item) = item.count > 0 and item.median != none
+#let matrix-series(item, multiple: false) = {
+  let complete = (item.missing_values == 0 and item.count > 0
+    and item.statuses.keys().all(status => status == "completed"))
+  el("article", class: "matrix-series", attrs: ("data-series": item.id,
+    "data-median": if item.median == none { "" } else { json.encode(item.median, pretty: false) },
+    "data-unit": item.unit, "data-direction": item.direction,
+    "data-validation": item.validation_status, "data-count": str(item.count),
+    "data-missing-values": str(item.missing_values),
+    "data-has-measurement": json.encode(matrix-has-measurement(item)),
+    "data-complete": json.encode(complete), "data-task": item.task), [
+    #if matrix-has-measurement(item) {
+      if multiple { el("span", class: "matrix-task-label", item.task) }
+      el("strong", class: "matrix-value", matrix-number(item.median, item.unit))
+    } else { el("p", [No measured value was captured for this metric.]) }
+  ])
+}
 #let matrix-metric(metric) = (
   full_diagrams_ns: "Full diagram construction time",
   signed_routed_ns: "Signed and routed diagrams time",
@@ -208,25 +227,14 @@
                   #el("th", class: "matrix-case", attrs: (scope: "row"), case)
                   #for run in view.columns {
                     let items = view.items.filter(item => item.case == case and matrix-run(item) == run.key)
+                    let measured = items.filter(matrix-has-measurement)
                     el("td", class: "matrix-cell", attrs: ("data-run": run.key,
                       "data-label": view.labels.at(run.key)), [
-                      #if items.len() == 0 {
+                      #if measured.len() == 0 {
                         el("strong", class: "matrix-value", [—])
                         el("span", class: "matrix-unavailable", [No measurement for this scope])
                       }
-                      #for item in items {
-                        let complete = (item.missing_values == 0 and item.count > 0
-                          and item.statuses.keys().all(status => status == "completed"))
-                        el("article", class: "matrix-series", attrs: ("data-series": item.id,
-                          "data-median": if item.median == none { "" } else { str(item.median) },
-                          "data-unit": item.unit, "data-direction": item.direction,
-                          "data-validation": item.validation_status, "data-count": str(item.count),
-                          "data-missing-values": str(item.missing_values),
-                          "data-complete": json.encode(complete), "data-task": item.task), [
-                          #if items.len() > 1 { el("span", class: "matrix-task-label", item.task) }
-                          #el("strong", class: "matrix-value", matrix-number(item.median, item.unit))
-                        ])
-                      }
+                      #for item in measured { matrix-series(item, multiple: measured.len() > 1) }
                       #el("span", class: "matrix-relative", [Select a reference])
                       #for pair in view.pairs.filter(pair => items.any(item => item.id == pair.candidate)) {
                         let left = view.lookup.at(pair.baseline)
@@ -235,11 +243,11 @@
                           hidden: "", "data-reference-run": matrix-run(left),
                           "data-reference-series": pair.baseline, "data-candidate-series": pair.candidate,
                           "data-status": pair.status,
-                          "data-ratio": if pair.ratio.median == none { "" } else { str(pair.ratio.median) },
-                          "data-speedup": if pair.speedup.median == none { "" } else { str(pair.speedup.median) },
+                          "data-ratio": if pair.ratio.median == none { "" } else { json.encode(pair.ratio.median, pretty: false) },
+                          "data-speedup": if pair.speedup.median == none { "" } else { json.encode(pair.speedup.median, pretty: false) },
                           "data-pairs": str(pair.ratio.count), "data-reason": notes,
-                          "data-minimum-ratio": if pair.ratio.minimum == none { "" } else { str(pair.ratio.minimum) },
-                          "data-maximum-ratio": if pair.ratio.maximum == none { "" } else { str(pair.ratio.maximum) },
+                          "data-minimum-ratio": if pair.ratio.minimum == none { "" } else { json.encode(pair.ratio.minimum, pretty: false) },
+                          "data-maximum-ratio": if pair.ratio.maximum == none { "" } else { json.encode(pair.ratio.maximum, pretty: false) },
                         ), notes)
                       }
                       #if items.len() > 0 {
@@ -247,6 +255,7 @@
                           #el("summary", [Details])
                           #for item in items {
                             el("p", [*#item.task* · #item.origin · #item.snapshot_id])
+                            if not matrix-has-measurement(item) { matrix-series(item) }
                             el("p", [Observed range: #matrix-number(item.minimum, item.unit) – #matrix-number(item.maximum, item.unit)])
                             el("p", [#str(item.count) completed samples · #str(item.warmups) warmups excluded])
                             el("p", [Qualification: #item.validation_status #item.validation_reason])
@@ -256,7 +265,7 @@
                             let left = view.lookup.at(pair.baseline)
                             el("p", view.labels.at(matrix-run(left)) + ": " + pair.status + "; " +
                               str(pair.ratio.count) + " matched pairs; candidate/reference median ratio " +
-                              if pair.ratio.median == none { "unavailable" } else { str(pair.ratio.median) })
+                              if pair.ratio.median == none { "unavailable" } else { json.encode(pair.ratio.median, pretty: false) })
                             el("p", matrix-pair-notes(pair))
                           }
                         ])

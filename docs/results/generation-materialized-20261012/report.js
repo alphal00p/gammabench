@@ -151,15 +151,20 @@
     relative.removeAttribute('title');
   }
 
+  function measuredSeries(cell) {
+    return cell ? [...cell.querySelectorAll('.matrix-series')].filter(series =>
+      positive(series.dataset.count) && series.dataset.median !== '' && Number.isFinite(Number(series.dataset.median))) : [];
+  }
+
   function recolor(row, reference) {
     const cells = [...row.querySelectorAll('.matrix-cell')];
     const referenceCell = cells.find(cell => cell.dataset.run === reference);
-    const referenceSeries = referenceCell ? [...referenceCell.querySelectorAll('.matrix-series')] : [];
+    const referenceSeries = measuredSeries(referenceCell);
     for (const cell of cells) {
       cell.querySelectorAll('.matrix-comparison').forEach(marker => { marker.hidden = true; delete marker.dataset.active; });
       if (!reference) { unrank(cell, 'Choose a reference to compare'); continue; }
       if (!referenceCell || !referenceSeries.length) { unrank(cell, 'Reference has no measurement for this workload'); continue; }
-      const series = [...cell.querySelectorAll('.matrix-series')];
+      const series = measuredSeries(cell);
       if (referenceSeries.length !== 1 || series.length > 1) {
         unrank(cell, 'Multiple captures: inspect evidence; no single comparison'); continue;
       }

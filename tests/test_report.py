@@ -53,6 +53,28 @@ class ReportElements(HTMLParser):
             self.select = None
 
 
+class MatrixCaptureElements(ReportElements):
+    """Distinguish primary values from retained details using real HTML nesting."""
+
+    def __init__(self, page):
+        self.details_depth = 0
+        self.captures = []
+        super().__init__(page)
+
+    def handle_starttag(self, tag, attrs):
+        super().handle_starttag(tag, attrs)
+        if tag == "details":
+            self.details_depth += 1
+        attributes = dict(attrs)
+        if attributes.get("class") == "matrix-series":
+            self.captures.append({**attributes, "inside_details": self.details_depth > 0})
+
+    def handle_endtag(self, tag):
+        if tag == "details":
+            self.details_depth -= 1
+        super().handle_endtag(tag)
+
+
 class ReportTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -635,6 +657,78 @@ class ReportTests(unittest.TestCase):
         self.assertEqual({float(item["data-median"]) for item in raw}, {10, 20, 110, 120})
         references = {option["value"] for option in document.options["matrix-reference"] if option["value"]}
         self.assertEqual(len(references), 1)
+
+    def test_matrix_keeps_unmeasured_profile_evidence_beside_independent_timing(self):
+        def change(snapshot, suite):
+            task = copy.deepcopy(suite["tasks"][1])
+            task["id"] = "candidate-profile"
+            suite["tasks"].append(task)
+            record = copy.deepcopy(next(record for record in snapshot["records"]
+                                        if record["task"] == "candidate-task" and record["phase"] == "measure"))
+            record.update(task=task["id"], status="timeout", metrics={}, duration_ns=999999999)
+            snapshot["records"].append(record)
+            snapshot["validation"]["tasks"][task["id"]] = copy.deepcopy(
+                snapshot["validation"]["tasks"]["candidate-task"])
+        directory = self.root / "matrix-profile-timeout"
+        analysis = render(self.snapshot(change=change), directory)
+        document = MatrixCaptureElements((directory / "index.html").read_text())
+        self.assertEqual({item["data-series"] for item in document.captures},
+                         {item["id"] for item in analysis["series"]})
+        measured = [item for item in document.captures if item["data-has-measurement"] == "true"]
+        missing = [item for item in document.captures if item["data-has-measurement"] == "false"]
+        self.assertEqual({item["data-task"] for item in measured}, {"baseline-task", "candidate-task"})
+        self.assertTrue(all(not item["inside_details"] for item in measured))
+        self.assertTrue(all(item["inside_details"] and item["data-count"] == "0" for item in missing))
+        self.assertEqual({item["data-task"] for item in missing}, {"candidate-profile"})
+        pair = next(pair for pair in analysis["comparisons"] if pair["metric"] == "completion_ns"
+                    and pair["baseline"].split(":")[1] == "baseline-task"
+                    and pair["candidate"].split(":")[1] == "candidate-task")
+        self.assertEqual(pair["status"], "comparable")
+        self.assertEqual(pair["ratio"]["count"], 3)
+        self.assertTrue(any(item.get("task") == "candidate-profile" and item["status"] == "timeout"
+                            for item in analysis["availability"]))
+        self.assertIn("candidate-profile", (directory / "index.html").read_text())
+
+    def test_matrix_treats_zero_and_negative_values_as_real_captures(self):
+        for value in (0, -2):
+            with self.subTest(value=value):
+                directory = self.root / ("matrix-zero" if value == 0 else "matrix-negative")
+                analysis = render(self.snapshot(a=(value, value), b=(5, 5)), directory)
+                document = MatrixCaptureElements((directory / "index.html").read_text())
+                item = next(item for item in document.captures
+                            if item["data-task"] == "baseline-task" and item["data-unit"] == "ns"
+                            and float(item["data-median"]) == value)
+                self.assertEqual(item["data-has-measurement"], "true")
+                self.assertFalse(item["inside_details"])
+                self.assertTrue(all(pair["status"] == "suppressed" for pair in analysis["comparisons"]
+                                    if pair["metric"] == "completion_ns"))
+
+    def test_matrix_preserves_partial_measured_capture_as_a_real_duplicate(self):
+        def change(snapshot, suite):
+            task = copy.deepcopy(suite["tasks"][1])
+            task["id"] = "candidate-partial"
+            suite["tasks"].append(task)
+            original = [record for record in snapshot["records"]
+                        if record["task"] == "candidate-task" and record["phase"] == "measure"]
+            for index, record in enumerate(original):
+                captured = copy.deepcopy(record)
+                captured["task"] = task["id"]
+                if index > 0:
+                    captured.update(status="timeout", metrics={})
+                snapshot["records"].append(captured)
+            snapshot["validation"]["tasks"][task["id"]] = copy.deepcopy(
+                snapshot["validation"]["tasks"]["candidate-task"])
+        directory = self.root / "matrix-partial-duplicate"
+        analysis = render(self.snapshot(change=change), directory)
+        document = MatrixCaptureElements((directory / "index.html").read_text())
+        captures = [item for item in document.captures if item["data-task"] == "candidate-partial"]
+        self.assertTrue(all(item["data-has-measurement"] == "true" for item in captures))
+        self.assertTrue(all(not item["inside_details"] and item["data-complete"] == "false"
+                            for item in captures))
+        self.assertEqual({item["data-task"] for item in document.captures
+                          if item["data-has-measurement"] == "true"},
+                         {"baseline-task", "candidate-task", "candidate-partial"})
+        self.assertEqual(len(document.captures), len(analysis["series"]))
 
     def test_matrix_preserves_unavailable_cases_and_censored_reference_status(self):
         def change(snapshot, suite):

@@ -112,7 +112,7 @@ with `--baseline baseline`. See [the preserved generation results](docs/results/
 ## GitHub Pages and Typst
 
 The [published site](https://alphal00p.github.io/gammabench/) uses GammaLoop's
-public Pages theme. The upstream CSS, JavaScript, marks and local fonts are
+public Pages palette with compact, single-font monospace typography. The upstream CSS, JavaScript, marks and local fonts are
 vendored unchanged at a complete revision with SHA-256 provenance and licenses
 in `src/gammabench/assets/theme/`.
 
