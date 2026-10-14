@@ -488,19 +488,20 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(set(inventory), {path.relative_to(directory).as_posix()
                                            for path in directory.rglob("*")
                                            if path.is_file() and path.name != "files.sha256.json"})
-        self.assertTrue({"index.html", "report.css", "report.js", "report.typ", "components.typ",
+        self.assertTrue({"index.html", "report.css", "report.js", "report.typ", "matrix.typ", "components.typ",
                          "analysis.json", "presentation.json", "rendering.json", "results.csv", "comparisons.csv",
                          "availability.csv", "theme/site.css", "theme/site.js"}.issubset(inventory))
         for name, digest in inventory.items():
             self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), digest)
-        for name in ("report.css", "report.js", "report.typ", "components.typ"):
+        for name in ("report.css", "report.js", "report.typ", "matrix.typ", "components.typ"):
             self.assertEqual((directory / name).read_bytes(),
                              resources.files("gammabench").joinpath("assets", name).read_bytes())
         document = ReportElements((directory / "index.html").read_text())
         self.assertEqual([attrs["src"] for tag, attrs in document.elements if tag == "script"], ["theme/site.js", "report.js"])
         self.assertEqual([attrs["href"] for tag, attrs in document.elements if tag == "link"], ["theme/site.css", "report.css"])
         self.assertFalse(any(tag == "style" for tag, _ in document.elements))
-        self.assertEqual(set(document.options), {"case", "baseline", "variant", "metric", "status"})
+        self.assertEqual(set(document.options), {"case", "baseline", "variant", "metric", "status",
+                                                 "matrix-case", "matrix-metric", "matrix-reference"})
         self.assertIn("four-loop", {option["value"] for option in document.options["case"]})
         self.assertIn("completion_ns", {option["value"] for option in document.options["metric"]})
         selected = [option["value"] for option in document.options["baseline"] if option["selected"]]
@@ -584,6 +585,120 @@ class ReportTests(unittest.TestCase):
         self.assertEqual((directory / "presentation.json").read_bytes(), (relocated / "presentation.json").read_bytes())
         self.assertTrue(all(hashlib.sha256((relocated / name).read_bytes()).hexdigest() == digest
                             for name, digest in inventory.items()))
+
+    def test_matrix_preserves_precomputed_reverse_pair_statistics(self):
+        directory = self.root / "matrix-pairs"
+        analysis = render(self.snapshot(a=(10, 10), b=(10, 40)), directory)
+        document = ReportElements((directory / "index.html").read_text())
+        markers = [attrs for tag, attrs in document.elements
+                   if attrs.get("class") == "matrix-comparison"]
+        self.assertEqual(len(markers), len(analysis["comparisons"]))
+        for pair in analysis["comparisons"]:
+            marker = next(attrs for attrs in markers
+                          if attrs["data-reference-series"] == pair["baseline"]
+                          and attrs["data-candidate-series"] == pair["candidate"])
+            self.assertEqual(float(marker["data-ratio"]), pair["ratio"]["median"])
+            self.assertEqual(float(marker["data-speedup"]), pair["speedup"]["median"])
+            self.assertEqual(int(marker["data-pairs"]), pair["ratio"]["count"])
+        self.assertIn(0.625, [float(item["data-ratio"]) for item in markers])
+        self.assertNotIn(0.4, [float(item["data-ratio"]) for item in markers])
+        self.assertEqual(json.loads((directory / "analysis.json").read_text()), analysis)
+        self.assertTrue(any(tag == "details" and attrs.get("class") == "matrix-evidence"
+                            and "open" not in attrs for tag, attrs in document.elements))
+
+    def test_matrix_explicit_baseline_only_offers_computed_reference_runs(self):
+        directory = self.root / "matrix-explicit"
+        analysis = render(self.snapshot(), directory, baseline="new")
+        document = ReportElements((directory / "index.html").read_text())
+        references = {json.loads(option["value"])[2]
+                      for option in document.options["matrix-reference"] if option["value"]}
+        self.assertEqual(references, {"new"})
+        self.assertTrue(all(pair["baseline"].split(":")[1] == "candidate-task"
+                            for pair in analysis["comparisons"]))
+        views = [attrs for tag, attrs in document.elements
+                 if attrs.get("class") == "matrix-view"]
+        self.assertTrue(all(json.loads(view["data-default-reference"])[2] == "new" for view in views))
+
+    def test_matrix_retains_duplicate_captures_instead_of_averaging(self):
+        def change(snapshot, suite):
+            suite["tasks"][1]["variant"] = "old"
+            for record in snapshot["records"]:
+                if record["task"] == "candidate-task":
+                    record["variant"] = "old"
+        directory = self.root / "matrix-duplicates"
+        analysis = render(self.snapshot(change=change), directory)
+        document = ReportElements((directory / "index.html").read_text())
+        raw = [attrs for tag, attrs in document.elements if attrs.get("class") == "matrix-series"]
+        self.assertEqual({item["data-series"] for item in raw}, {item["id"] for item in analysis["series"]})
+        self.assertEqual(len(raw), len(analysis["series"]))
+        self.assertEqual({item["data-task"] for item in raw}, {"baseline-task", "candidate-task"})
+        self.assertEqual({float(item["data-median"]) for item in raw}, {10, 20, 110, 120})
+        references = {option["value"] for option in document.options["matrix-reference"] if option["value"]}
+        self.assertEqual(len(references), 1)
+
+    def test_matrix_preserves_unavailable_cases_and_censored_reference_status(self):
+        def change(snapshot, suite):
+            snapshot["schedule"]["unsupported"] = [{"case": "vacuum", "engine": "qgraf", "reason": "No vacuum support"}]
+            record = next(record for record in snapshot["records"]
+                          if record["task"] == "baseline-task" and record["phase"] == "measure" and record["repeat"] == 1)
+            record.update(status="timeout", metrics={})
+        directory = self.root / "matrix-censored"
+        analysis = render(self.snapshot(change=change), directory)
+        document = ReportElements((directory / "index.html").read_text())
+        rows = [attrs for tag, attrs in document.elements if tag == "tr" and "data-matrix-case" in attrs]
+        self.assertIn("vacuum", {row["data-matrix-case"] for row in rows})
+        missing = [attrs for tag, attrs in document.elements if attrs.get("class") == "matrix-availability-item"]
+        self.assertEqual(len(missing), len(analysis["availability"]))
+        self.assertIn("unsupported", {item["data-status"] for item in missing})
+        raw = [attrs for tag, attrs in document.elements if attrs.get("class") == "matrix-series"]
+        self.assertTrue(all(item["data-complete"] == "false" for item in raw
+                            if item["data-task"] == "baseline-task"))
+        markers = [attrs for tag, attrs in document.elements if attrs.get("class") == "matrix-comparison"]
+        self.assertTrue(all(item["data-status"] == "suppressed" and not item["data-ratio"] for item in markers))
+        self.assertTrue(all(item["data-median"] != "0" for item in raw))
+
+    def test_matrix_keeps_contracts_in_separate_views_and_suppression_in_evidence(self):
+        def change(snapshot, suite):
+            suite["contracts"]["graphs"] = {"description": "Graphs only", "included": ["symmetry"], "excluded": ["numerators"]}
+            snapshot["contracts"] = copy.deepcopy(suite["contracts"])
+            suite["tasks"][1]["contract"] = "graphs"
+            for record in snapshot["records"]:
+                if record["task"] == "candidate-task":
+                    record["contract"] = "graphs"
+        directory = self.root / "matrix-contracts"
+        analysis = render(self.snapshot(change=change), directory)
+        page = (directory / "index.html").read_text()
+        document = ReportElements(page)
+        views = [attrs for tag, attrs in document.elements if attrs.get("class") == "matrix-view"]
+        self.assertEqual(len(views), 4)  # Two contracts, application and process clocks.
+        self.assertEqual({view["data-contract"] for view in views}, {"full", "graphs"})
+        self.assertEqual(len({view["data-matrix-view"] for view in views}), 4)
+        self.assertTrue(all(json.loads(view["data-matrix-view"])[-1] == view["data-contract"] for view in views))
+        self.assertFalse(any(attrs.get("class") == "matrix-comparison" for tag, attrs in document.elements))
+        self.assertTrue(all(pair["status"] == "suppressed" for pair in analysis["comparisons"]))
+        self.assertIn("Output contracts differ.", page)
+
+    def test_matrix_retains_an_unsupported_only_study_without_fake_measurements(self):
+        def change(snapshot, suite):
+            snapshot["records"] = []
+            snapshot["schedule"]["selected_tasks"] = []
+            snapshot["schedule"]["unsupported"] = [{
+                "case": "vacuum", "engine": "qgraf", "reason": "No captured support",
+            }]
+        directory = self.root / "matrix-unsupported-only"
+        path = self.snapshot(change=change)
+        analysis = render(path, directory)
+        document = ReportElements((directory / "index.html").read_text())
+        self.assertEqual(analysis["series"], [])
+        self.assertEqual(analysis["comparisons"], [])
+        self.assertFalse(any(attrs.get("class") == "matrix-series"
+                             for _, attrs in document.elements))
+        entries = [attrs for _, attrs in document.elements
+                   if attrs.get("class") == "matrix-availability-item"]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["data-status"], "unsupported")
+        self.assertEqual(entries[0]["data-matrix-case"], "vacuum")
+        self.assertIn("No captured support", (directory / "index.html").read_text())
 
     def test_report_destination_cannot_modify_a_source_snapshot(self):
         path = self.snapshot()

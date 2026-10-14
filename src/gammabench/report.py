@@ -446,7 +446,7 @@ def render(snapshot_paths: Any, output: str | os.PathLike[str], *, baseline: str
         json.dumps(_presentation(analysis, directory), indent=2, sort_keys=True, allow_nan=False) + "\n",
         encoding="utf-8")
     assets = resources.files("gammabench").joinpath("assets")
-    for name in ("report.typ", "components.typ", "rendering.json", "report.css", "report.js", "theme"):
+    for name in ("report.typ", "matrix.typ", "components.typ", "rendering.json", "report.css", "report.js", "theme"):
         _copy_resource(assets.joinpath(name), directory / name)
     rendered = subprocess.run([compiler, "compile", "--root", str(directory), "--features", "html",
                                "--creation-timestamp", "0", str(directory / "report.typ"),

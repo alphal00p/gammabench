@@ -116,8 +116,22 @@ public Pages theme. The upstream CSS, JavaScript, marks and local fonts are
 vendored unchanged at a complete revision with SHA-256 provenance and licenses
 in `src/gammabench/assets/theme/`.
 
+The front page shows a comparison matrix: workloads are rows and tool/implementation
+versions are columns. Select the output, measured stage and exact reference. Cells
+show readable units and the stored paired relative result. Green means better
+than the reference, yellow is equal, and red means worse; the fixed colour scale
+saturates at a twofold difference. Unqualified, missing and ambiguous captures
+remain neutral with their reasons. Colour always compares one workload to its
+reference, rather than comparing unrelated absolute workload costs.
+
+All reference directions come from the precomputed analysis. The browser changes
+which result is shown; it never inverts a median or computes a new statistic.
+Unsupported and censored entries stay visible when metric/reference selection
+changes. Full tables, contracts, versions and raw evidence remain expandable.
+
 The landing pages are authored in `web/main.typ`. Report content, tables,
-controls and evidence sections are authored in `src/gammabench/assets/report.typ`,
+controls and evidence sections are authored in `src/gammabench/assets/report.typ`
+and `matrix.typ`,
 with a shared semantic HTML boundary in `components.typ`. Typst 0.15.1 compiles
 both to ordinary static HTML. CSS handles responsive browser layout and light/dark
 styling; JavaScript handles the comparison filters. No web server or browser

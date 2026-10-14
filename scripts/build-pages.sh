@@ -27,6 +27,7 @@ cp -R "$gammabench_repo_dir/docs/results" "$gammabench_stage/docs/results"
 cp -R "$gammabench_repo_dir/snapshots" "$gammabench_stage/snapshots"
 cp -R "$gammabench_repo_dir/src/gammabench/assets/theme" "$gammabench_stage/assets/theme"
 cp "$gammabench_repo_dir/src/gammabench/assets/report.css" "$gammabench_stage/assets/report.css"
+cp "$gammabench_repo_dir/src/gammabench/assets/report.js" "$gammabench_stage/assets/report.js"
 typst compile --root "$gammabench_repo_dir" --features html,bundle --format bundle \
   --creation-timestamp 0 "$gammabench_repo_dir/web/main.typ" "$gammabench_stage"
 cp "$gammabench_repo_dir/artifacts.json" "$gammabench_stage/artifacts.json"

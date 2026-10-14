@@ -27,3 +27,57 @@
   .controls, .bench-study-grid { grid-template-columns: 1fr; }
   .bench-study-grid .portal-project-card { border-right: 0; }
 }
+
+/* Colours encode the stored comparison against this workload's chosen reference. */
+#comparison-matrix {
+  --matrix-saturation: 55%;
+  --matrix-lightness: 88%;
+}
+:root[data-theme="dark"] #comparison-matrix { --matrix-saturation: 35%; --matrix-lightness: 25%; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) #comparison-matrix { --matrix-saturation: 35%; --matrix-lightness: 25%; }
+}
+.matrix-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+.matrix-controls label { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 0.35rem; color: var(--ink-muted); font-size: 0.8rem; }
+.matrix-controls input, .matrix-controls select { width: 100%; min-width: 0; padding: 0.65rem; border: 1px solid var(--hairline); border-radius: var(--radius); background: var(--surface); color: var(--ink-strong); font: inherit; }
+.matrix-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem 1.2rem; color: var(--ink-muted); font-size: 0.75rem; margin: 1rem 0; }
+.matrix-legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+.matrix-legend-slower::before, .matrix-legend-reference::before, .matrix-legend-faster::before, .matrix-legend-neutral::before { content: ""; display: inline-block; width: 1.2rem; height: 1rem; background: hsl(var(--matrix-hue) var(--matrix-saturation) var(--matrix-lightness)); }
+.matrix-legend-slower { --matrix-hue: 0; }
+.matrix-legend-reference { --matrix-hue: 60; }
+.matrix-legend-faster { --matrix-hue: 120; }
+.matrix-legend-neutral::before { background: var(--surface-soft); }
+.matrix-heading { color: var(--ink-strong); font-family: var(--font-serif); font-size: 1.5rem; font-weight: 500; margin: 1.4rem 0 0.5rem; }
+.matrix-scope, #matrix-summary { color: var(--ink-muted); font-size: 0.8rem; margin: 0.7rem 0; }
+.matrix-tablewrap { max-width: 100%; overflow: auto; margin: 1.25rem 0; border: 1px solid var(--hairline); }
+.matrix-table { display: table; width: 100%; border-collapse: collapse; }
+.matrix-table th, .matrix-table td { padding: 0.9rem; border-bottom: 1px solid var(--hairline); text-align: left; vertical-align: top; }
+.matrix-table thead th { min-width: 10rem; background: var(--surface-soft); color: var(--ink-strong); font-size: 0.85rem; font-weight: 500; }
+.matrix-table thead th:first-child { min-width: 13rem; }
+.matrix-table th.matrix-case { position: sticky; left: 0; z-index: 1; width: 13rem; max-width: 16rem; background: var(--surface); color: var(--ink-strong); font: 0.8rem/1.6 var(--font-mono); overflow-wrap: anywhere; }
+.matrix-cell { min-width: 10rem; background: var(--surface); font-variant-numeric: tabular-nums; }
+.matrix-cell[data-tone="qualified"], .matrix-cell[data-tone="reference"] { background: hsl(var(--matrix-hue) var(--matrix-saturation) var(--matrix-lightness)); }
+.matrix-value { display: block; color: var(--ink-strong); font-size: 1.05rem; font-weight: 500; white-space: nowrap; }
+.matrix-relative { display: block; color: var(--ink-strong); font-size: 0.75rem; margin-top: 0.4rem; }
+.matrix-cell[data-tone="unranked"] .matrix-relative { color: var(--ink-muted); }
+.matrix-series + .matrix-series { margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid var(--hairline); }
+.matrix-task-label { display: block; color: var(--ink-muted); font-size: 0.7rem; overflow-wrap: anywhere; }
+.bench-section .matrix-cell-details { background: transparent; padding: 0; border: 0; margin: 0.7rem 0 0; font-size: 0.72rem; }
+.bench-section .matrix-cell-details summary { color: var(--ink-muted); font-size: 0.7rem; font-weight: 400; }
+.bench-section .matrix-cell-details p { margin: 0.5rem 0; }
+.bench-section .matrix-comparison-evidence { margin: 0.5rem 0; }
+#matrix-availability { margin-top: 1.5rem; }
+#matrix-availability h3 { color: var(--ink-strong); font-size: 1rem; font-weight: 500; }
+#matrix-availability ul { padding-left: 1.2rem; font-size: 0.8rem; }
+#matrix-availability-count { color: var(--ink-muted); font-size: 0.75rem; }
+.matrix-evidence { margin-top: 2rem; }
+@media (max-width: 38rem) {
+  .matrix-controls { grid-template-columns: 1fr; }
+  .matrix-table th, .matrix-table td { padding: 0.7rem; }
+  .matrix-table th.matrix-case, .matrix-table thead th:first-child { min-width: 9rem; width: 9rem; }
+}
+
+.matrix-reading-guide { color: var(--ink-muted); font-size: 0.8rem; margin: 1rem 0; }
+.matrix-unavailable { display: block; color: var(--ink-muted); font-size: 0.75rem; }
+.bench-section .matrix-contract { padding: 0; border: 0; margin: 0.75rem 0; background: transparent; font-size: 0.8rem; }
+.matrix-contract summary { width: fit-content; }

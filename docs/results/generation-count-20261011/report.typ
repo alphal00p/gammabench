@@ -1,4 +1,5 @@
 #import "components.typ": el, bench-document, hero, kicker, section
+#import "matrix.typ": comparison-matrix
 #{
 // Measurements and gates are computed offline. Typst owns their presentation.
 let analysis = json("analysis.json")
@@ -73,6 +74,11 @@ bench-document(
 ]
 
 #section[
+
+#comparison-matrix((analysis,))
+
+#el("details", class: "matrix-evidence", [
+#el("summary", [Detailed measurements and evidence])
 
 #el("p", [
   #el("a", attrs: (href: "results.csv"), [Measurement CSV]) ·
@@ -220,10 +226,12 @@ lower bound on a different measured stage.
 
 #el("footer", [Generated offline by gammabench. Exported HTML, CSV and JSON share
   the same analysis values. Source snapshots are never changed. The retained
-  #el("a", attrs: (href: "report.typ"), [Typst source]) and
+  #el("a", attrs: (href: "report.typ"), [report Typst source]),
+  #el("a", attrs: (href: "matrix.typ"), [matrix Typst source]) and
   #el("a", attrs: (href: "presentation.json"), [presentation links]) allow direct rebuilding with the
   #el("a", attrs: (href: "rendering.json"), [pinned compiler and command]).])
 
+])
 ]
 ]
 

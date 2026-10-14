@@ -1,52 +1,56 @@
 #import "/src/gammabench/assets/components.typ": *
+#import "/src/gammabench/assets/matrix.typ": comparison-matrix
 #let studies = json("studies.json")
+#let analyses = studies.map(study => json("/docs/results/" + study.id + "/analysis.json"))
+#let titles = (:)
+#for study in studies { titles.insert(study.id, study.title) }
+#let overview = comparison-matrix(
+  analyses,
+  titles: titles,
+  initial-study: "generation-materialized-20261012",
+)
 
 #document("index.html")[
   #bench-document(
     "Benchmark results",
     "Browse versioned GammaLoop benchmarks, compare equivalent outputs, and inspect measurement evidence.",
-    assets: "assets/", home: "index.html",
+    assets: "assets/", home: "index.html", interactive: true,
   )[
-    #hero[
-      #kicker[Public research · benchmarks]
+    #hero(compact: true)[
+      #kicker[Public research · captured measurements]
 
-      = Benchmarks you can inspect.
+      = Compare benchmark results
 
-      Browse captured results, choose a comparison baseline, and follow each number back to its workload, tool versions and raw records.
+      Choose the output, metric and reference. Each row compares the same workload; coloured cells have a qualified comparison against the reference.
     ]
-    #group(class: "portal-section-heading")[
-      #group[
-        #kicker[Generation · four studies]
-
-        == Graph generation
-      ]
-      #el("p")[Four historical studies, 12 workloads per study. Reports retain the original measurements and qualification evidence.]
-    ]
-    #study-cards(studies, "docs/results/")
+    #section[#overview]
     #section[
-      == Compare equivalent work
+      #el("details")[
+        #el("summary")[Study reports and evidence]
+        #study-cards(studies, "docs/results/")
+        Each study retains its original measurements, output contract, tool versions and qualification evidence.
 
-      Each report has its own output contract and timing scopes. Case, baseline, metric and status filters select precomputed, qualified comparisons. Timeouts and unsupported workloads stay visible.
-
-      Observed ranges describe captured samples; they are not confidence intervals. Historical imports are labelled throughout.
-
-      #link("artifacts.json")[Artifact index] · #link("https://github.com/alphal00p/gammabench/releases/tag/v0.1.0")[Download raw evidence]
+        #link("artifacts.json")[Artifact index] · #link("https://github.com/alphal00p/gammabench/releases/tag/v0.1.0")[Download raw evidence]
+      ]
     ]
   ]
 ]
 
 #document("docs/results/index.html")[
-  #bench-document("Preserved results", "Historical generation studies with explicit output and measurement contracts.", assets: "../../assets/", home: "../../index.html")[
-    #hero[
+  #bench-document("Preserved results", "Historical generation studies with explicit output and measurement contracts.", assets: "../../assets/", home: "../../index.html", interactive: true)[
+    #hero(compact: true)[
       #kicker[Captured measurements · source evidence]
 
-      = Preserved results
+      = Compare preserved results
 
-      Historical generation studies displayed through the standard snapshot analysis. Each study retains its own output and measurement contracts.
+      Select the output and reference before comparing workloads.
     ]
-    #study-cards(studies, "")
+    #section[#overview]
     #section[
-      Reports include tables, paired comparisons, versions, contracts, failures and CSV/JSON exports. Different output contracts are not ranked together.
+      #el("details")[
+        #el("summary")[Individual study reports]
+        #study-cards(studies, "")
+      ]
     ]
   ]
 ]
