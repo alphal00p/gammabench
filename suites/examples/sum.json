@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "id": "integer-sum",
+  "description": "Framework demonstration: equivalent exact integer sums, no GammaLoop installation required.",
+  "contracts": {
+    "exact-integer-sum-v1": {
+      "description": "Same input range and exact sum retained before timing completes.",
+      "included": [
+        "Summing the already allocated integer list"
+      ],
+      "excluded": [
+        "Input JSON parsing",
+        "List construction",
+        "Printing and process startup"
+      ]
+    }
+  },
+  "metrics": {
+    "compute_ns": {
+      "unit": "ns",
+      "direction": "lower",
+      "scope": "Summation through retained exact integer result",
+      "result_field": "compute_ns"
+    }
+  },
+  "tools": {
+    "python": {
+      "kind": "executable",
+      "path": "{python}",
+      "version": "Python",
+      "version_command": [
+        "{tool}",
+        "--version"
+      ]
+    }
+  },
+  "tasks": [
+    {
+      "id": "sum-loop",
+      "case": "100000-integers",
+      "engine": "python",
+      "variant": "loop",
+      "contract": "exact-integer-sum-v1",
+      "validation_command": [
+        "{tool:python}",
+        "{suite_dir}/sum.py",
+        "loop"
+      ],
+      "tool_ids": [
+        "python"
+      ],
+      "inputs": {
+        "workload.json": "workload.json"
+      },
+      "expected": {
+        "total": 4999950000,
+        "items": 100000
+      },
+      "equivalence_fields": [
+        "total",
+        "items"
+      ],
+      "argv": [
+        "{tool:python}",
+        "{suite_dir}/sum.py",
+        "loop"
+      ]
+    },
+    {
+      "id": "sum-builtin",
+      "case": "100000-integers",
+      "engine": "python",
+      "variant": "builtin",
+      "contract": "exact-integer-sum-v1",
+      "validation_command": [
+        "{tool:python}",
+        "{suite_dir}/sum.py",
+        "builtin"
+      ],
+      "tool_ids": [
+        "python"
+      ],
+      "inputs": {
+        "workload.json": "workload.json"
+      },
+      "expected": {
+        "total": 4999950000,
+        "items": 100000
+      },
+      "equivalence_fields": [
+        "total",
+        "items"
+      ],
+      "argv": [
+        "{tool:python}",
+        "{suite_dir}/sum.py",
+        "builtin"
+      ]
+    }
+  ]
+}
