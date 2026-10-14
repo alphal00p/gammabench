@@ -1,6 +1,9 @@
 """The published artifact must retain every relative report/evidence link."""
 from html.parser import HTMLParser
 from pathlib import Path
+import hashlib
+import json
+import re
 import subprocess
 import tempfile
 import unittest
@@ -56,6 +59,30 @@ class PagesTests(unittest.TestCase):
         for name in ('src', 'suites', '.git', '.venv', '.gammabench', 'tools.lock.json'):
             self.assertFalse((self.site / name).exists(), name)
         self.assertFalse(any(path.is_symlink() for path in self.site.rglob('*')))
+
+    def test_pinned_theme_and_local_css_assets_are_complete(self):
+        theme = self.site / 'assets/theme'
+        provenance = json.loads((theme / 'provenance.json').read_text())
+        self.assertEqual(provenance['revision'], '2e22d46aae9aa987aada970474cec266976cde5b')
+        for asset in provenance['assets']:
+            if 'vendored_path' not in asset:
+                continue
+            path = theme / asset['vendored_path']
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), asset['sha256'])
+        for css in self.site.rglob('*.css'):
+            for raw in re.findall(r'url\(([^)]+)\)', css.read_text()):
+                url = urlsplit(raw.strip('"\' '))
+                if url.scheme or url.netloc or not url.path:
+                    continue
+                path = (css.parent / unquote(url.path)).resolve()
+                self.assertTrue(path.is_relative_to(self.site.resolve()), (css, raw))
+                self.assertTrue(path.is_file(), (css, raw))
+        self.assertTrue((theme / 'upstream-LICENSE').is_file())
+        self.assertTrue((theme / 'STIX-Two-OFL.txt').is_file())
+        page = (self.site / 'index.html').read_text()
+        self.assertIn('assets/theme/site.css', page)
+        self.assertIn('data-theme-toggle', page)
+        self.assertNotIn('<style>', page)
 
     def test_existing_destination_and_source_destinations_are_protected(self):
         old = (self.site / 'index.html').read_bytes()

@@ -2,8 +2,8 @@
 
 Read README.md and docs/protocol.md before editing. Keep benchmark definitions,
 correctness checks, output contracts, tool pins, raw records and display consistent.
-Use the Python standard library for the framework. Suite-specific drivers may use
-pinned external tools. Keep production physics in the tool being measured.
+Use the Python standard library for execution and analysis; report presentation
+uses pinned Typst. Suite-specific drivers may use pinned external tools. Keep production physics in the tool being measured.
 
 Before each new jj change ask for the author name/email and set it explicitly.
 Do not rewrite a sealed result snapshot; publish a new snapshot with provenance.

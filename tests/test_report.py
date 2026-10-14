@@ -6,11 +6,15 @@ import hashlib
 from html.parser import HTMLParser
 from importlib import resources
 import json
+import shutil
+import subprocess
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
+from unittest.mock import patch
 import unittest
 
-from gammabench.report import _row_attrs, analyze, render
+from gammabench.report import analyze, render
 from gammabench.schema import validate_suite
 from gammabench.snapshot import IntegrityError, seal, staging_directory
 
@@ -33,7 +37,7 @@ class ReportElements(HTMLParser):
             self.select = attributes.get("id")
             self.options[self.select] = []
         elif tag == "option":
-            self.option = {"value": attributes.get("value"), "text": "", "selected": "selected" in attributes}
+            self.option = {"value": attributes.get("value") or "" if "value" in attributes else None, "text": "", "selected": "selected" in attributes}
 
     def handle_data(self, data):
         if self.option is not None:
@@ -466,10 +470,11 @@ class ReportTests(unittest.TestCase):
             pairs = list(csv.DictReader(stream))
         self.assertEqual(float(pairs[0]["median_ratio"]), analysis["comparisons"][0]["ratio"]["median"])
         page = (directory / "index.html").read_text()
-        self.assertIn("&lt;script&gt;", page)
+        self.assertIn("&lt;script", page)
         self.assertNotIn('<script>alert("unsafe")</script>', page)
         self.assertNotIn('src="http', page)
-        self.assertIn("input id=\"search\"", page)
+        self.assertTrue(any(tag == "input" and attrs.get("id") == "search"
+                            for tag, attrs in ReportElements(page).elements))
         self.assertIn("aggregate multiplication", page)
         self.assertIn("generation to completion", page)
         self.assertEqual(before, {file.name: file.read_bytes() for file in path.iterdir()})
@@ -480,16 +485,20 @@ class ReportTests(unittest.TestCase):
         directory = self.root / "assets-report"
         render(self.snapshot(), directory)
         inventory = json.loads((directory / "files.sha256.json").read_text())
-        self.assertEqual(set(inventory), {"index.html", "report.css", "report.js", "analysis.json",
-                                          "results.csv", "comparisons.csv", "availability.csv"})
+        self.assertEqual(set(inventory), {path.relative_to(directory).as_posix()
+                                           for path in directory.rglob("*")
+                                           if path.is_file() and path.name != "files.sha256.json"})
+        self.assertTrue({"index.html", "report.css", "report.js", "report.typ", "components.typ",
+                         "analysis.json", "presentation.json", "rendering.json", "results.csv", "comparisons.csv",
+                         "availability.csv", "theme/site.css", "theme/site.js"}.issubset(inventory))
         for name, digest in inventory.items():
             self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), digest)
-        for name in ("report.css", "report.js"):
+        for name in ("report.css", "report.js", "report.typ", "components.typ"):
             self.assertEqual((directory / name).read_bytes(),
                              resources.files("gammabench").joinpath("assets", name).read_bytes())
         document = ReportElements((directory / "index.html").read_text())
-        self.assertEqual([attrs["src"] for tag, attrs in document.elements if tag == "script"], ["report.js"])
-        self.assertEqual([attrs["href"] for tag, attrs in document.elements if tag == "link"], ["report.css"])
+        self.assertEqual([attrs["src"] for tag, attrs in document.elements if tag == "script"], ["theme/site.js", "report.js"])
+        self.assertEqual([attrs["href"] for tag, attrs in document.elements if tag == "link"], ["theme/site.css", "report.css"])
         self.assertFalse(any(tag == "style" for tag, _ in document.elements))
         self.assertEqual(set(document.options), {"case", "baseline", "variant", "metric", "status"})
         self.assertIn("four-loop", {option["value"] for option in document.options["case"]})
@@ -527,12 +536,54 @@ class ReportTests(unittest.TestCase):
 
     def test_selector_attributes_roundtrip_literal_markup_without_injecting_nodes(self):
         value = '\"><script>alert("unsafe")</script>'
-        page = '<tr ' + _row_attrs(value, value, value, value,
-                                  baseline={"engine": value, "variant": value}) + '></tr>'
-        document = ReportElements(page)
-        self.assertEqual([tag for tag, _ in document.elements], ["tr"])
-        self.assertEqual(document.elements[0][1], {name: value for name in (
-            "data-case", "data-variant", "data-metric", "data-status", "data-baseline-engine", "data-baseline-variant")})
+        analysis = analyze(self.snapshot())
+        for item in analysis["series"]:
+            for field in ("case", "variant", "engine", "metric", "validation_status"):
+                item[field] = value
+        for pair in analysis["comparisons"]:
+            for field in ("case", "metric", "status"):
+                pair[field] = value
+        directory = self.root / "literal-report"
+        with patch("gammabench.report.analyze", return_value=analysis):
+            render([], directory)
+        document = ReportElements((directory / "index.html").read_text())
+        scripts = [attrs for tag, attrs in document.elements if tag == "script"]
+        self.assertEqual([attrs["src"] for attrs in scripts], ["theme/site.js", "report.js"])
+        self.assertTrue(all("defer" in attrs for attrs in scripts))
+        rows = [attrs for tag, attrs in document.elements if tag == "tr" and "data-baseline-engine" in attrs]
+        self.assertEqual(len(rows), 4)
+        self.assertTrue(all(all(row[name] == value for name in (
+            "data-case", "data-variant", "data-metric", "data-status", "data-baseline-engine", "data-baseline-variant"))
+            for row in rows))
+        self.assertIn(value, {option["value"] for option in document.options["case"]})
+        self.assertIn("engine:" + value, {option["value"] for option in document.options["baseline"]})
+
+    def test_typst_is_pinned_before_creating_report_destination(self):
+        path = self.snapshot()
+        for executable, version in ((None, None), ("typst", "typst 0.15.0")):
+            directory = self.root / ("missing-typst" if executable is None else "wrong-typst")
+            with self.subTest(executable=executable), patch("gammabench.report.shutil.which", return_value=executable), \
+                    patch("gammabench.report.subprocess.run", return_value=SimpleNamespace(
+                        stdout=version, stderr="", returncode=0)):
+                with self.assertRaisesRegex(ValueError, "requires Typst 0.15.1"):
+                    render(path, directory)
+            self.assertFalse(directory.exists())
+
+    def test_exported_typst_rebuilds_identical_html_after_report_relocation(self):
+        directory = self.root / "original-report"
+        render(self.snapshot(), directory)
+        relocated = self.root / "moved" / "report"
+        shutil.copytree(directory, relocated)
+        recipe = json.loads((relocated / "rendering.json").read_text())
+        self.assertEqual(recipe["compiler"], {"name": "typst", "version": "0.15.1"})
+        self.assertEqual(recipe["creation_timestamp"], 0)
+        self.assertEqual(recipe["features"], ["html"])
+        subprocess.run(recipe["command"].split(), cwd=relocated, check=True, capture_output=True)
+        inventory = json.loads((directory / "files.sha256.json").read_text())
+        self.assertEqual((directory / "index.html").read_bytes(), (relocated / "index.html").read_bytes())
+        self.assertEqual((directory / "presentation.json").read_bytes(), (relocated / "presentation.json").read_bytes())
+        self.assertTrue(all(hashlib.sha256((relocated / name).read_bytes()).hexdigest() == digest
+                            for name, digest in inventory.items()))
 
     def test_report_destination_cannot_modify_a_source_snapshot(self):
         path = self.snapshot()

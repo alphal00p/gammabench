@@ -13,7 +13,8 @@ compilation and other measurements.
 
 ## Quick start
 
-Requires Python 3.11 or later. The framework uses only the standard library.
+Requires Python 3.11 or later for running benchmarks and analysis, and Typst
+0.15.1 for report generation. The Python framework uses only the standard library.
 
 ```sh
 python -m pip install -e .
@@ -108,24 +109,35 @@ Compare engines with `--baseline engine:linnet`, or implementation variants
 with `--baseline baseline`. See [the preserved generation results](docs/results/README.md).
 
 
-## GitHub Pages and language boundaries
+## GitHub Pages and Typst
 
-The published site serves precomputed reports and their evidence. Browser filters
-select case, baseline engine/variant, metric and status; both ratio directions are
-computed from qualified raw sample pairs before publication. The browser does
-not recompute statistics or relax correctness gates.
+The [published site](https://alphal00p.github.io/gammabench/) uses GammaLoop's
+public Pages theme. The upstream CSS, JavaScript, marks and local fonts are
+vendored unchanged at a complete revision with SHA-256 provenance and licenses
+in `src/gammabench/assets/theme/`.
 
-HTML, CSS and JavaScript live in `src/gammabench/assets/`. The Python report
-module derives analysis and fills the template; it does not implement a web
-server. The benchmark engines and kernels are Rust/native programs. Python
-currently handles the runner, source acquisition, snapshot integrity, analysis
-and historical imports using the standard library. Those responsibilities are
-not tied to Python: the versioned JSON protocol can be consumed by a future Rust
-CLI without changing the browser or archived result formats.
+The landing pages are authored in `web/main.typ`. Report content, tables,
+controls and evidence sections are authored in `src/gammabench/assets/report.typ`,
+with a shared semantic HTML boundary in `components.typ`. Typst 0.15.1 compiles
+both to ordinary static HTML. CSS handles responsive browser layout and light/dark
+styling; JavaScript handles the comparison filters. No web server or browser
+Python runtime is needed.
 
-The Pages workflow copies the existing reports and snapshots into a static
-artifact using Bash and GitHub Actions. It does not install or run Python.
-To preview the same artifact locally:
+Python produces the offline analysis JSON and CSV using the existing correctness
+gates. Typst consumes that JSON and a separate relative-link map; it does not
+rerun measurements or recompute statistics. Both ratio directions are computed
+from qualified raw sample pairs before publication. Every generated report retains
+its Typst sources, analysis, link map, compiler version and checksummed assets,
+so the presentation can be rebuilt directly from the report directory.
+
+The benchmark engines and kernels remain Rust/native programs. Python currently
+handles orchestration, source acquisition, snapshot integrity, analysis and
+historical imports. The versioned JSON protocol allows those responsibilities to
+move to another language without changing archived result formats or Typst pages.
+
+The Pages workflow compiles the landing pages with pinned Typst, then copies
+precomputed reports and sealed snapshots into the static artifact. It does not
+install or run Python. To preview the same artifact locally:
 
 ```sh
 bash scripts/build-pages.sh .gammabench/pages-preview
@@ -133,5 +145,5 @@ python -m http.server --directory .gammabench/pages-preview
 ```
 
 The server command is optional local convenience; GitHub Pages hosts the static
-files. Keep the repository-relative report/evidence layout when copying the
+files. Preserve the repository-relative report/evidence layout when copying the
 artifact, since report links point to the original sealed snapshot files.

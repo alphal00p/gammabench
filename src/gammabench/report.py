@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import csv
 import hashlib
-import html
 from importlib import resources
 import json
 import math
 import os
 from pathlib import Path
 import statistics
-from string import Template
+import shutil
+import subprocess
 from typing import Any
 from urllib.parse import quote
 
@@ -370,129 +370,41 @@ def analyze(snapshot_paths: Any, *, baseline: str | None = None) -> dict[str, An
     }
 
 
-def _escape(value: Any) -> str:
-    return html.escape(str(value), quote=True)
-
-
-def _number(value: Any) -> str:
-    if value is None:
-        return "—"
-    if isinstance(value, int):
-        return f"{value:,}"
-    return f"{value:,.6g}"
-
-
-def _range(stats: dict[str, Any]) -> str:
-    if stats["median"] is None:
-        return "—"
-    return f"{_number(stats['minimum'])} – {_number(stats['maximum'])}"
-
-
-def _label(series: dict[str, Any]) -> str:
-    return f"{series['engine']} / {series['variant']} · {series['snapshot_id']}"
-
-
-def _row_attrs(case: str, variant: str, metric: str, status: str, *, baseline: dict[str, Any] | None = None) -> str:
-    attributes = [("case", case), ("variant", variant), ("metric", metric), ("status", status)]
-    if baseline is not None:
-        attributes.extend((("baseline-engine", baseline["engine"]), ("baseline-variant", baseline["variant"])))
-    return " ".join(f'data-{key}="{_escape(value)}"' for key, value in attributes)
-
-
-def _html(analysis: dict[str, Any], output: Path) -> str:
-    series = {item["id"]: item for item in analysis["series"]}
-    measurement_rows = []
-    for item in analysis["series"]:
-        counts = ", ".join(f"{count} {status}" for status, count in sorted(item["statuses"].items())) or "no measurements"
-        if item["missing_values"]:
-            counts += f"; {item['missing_values']} missing metric"
-        status = item["validation_status"]
-        qualification = status + (": " + item["validation_reason"] if item["validation_reason"] else "")
-        cells = [item["case"], _label(item), item["contract"], item["metric"], item["scope"],
-                 _number(item["median"]), _range(item), item["unit"],
-                 f"{item['count']} ({counts}); {item['warmups']} warmups excluded", qualification, item["origin"]]
-        measurement_rows.append(f'<tr {_row_attrs(item["case"], item["variant"], item["metric"], status)}>' +
-                                "".join(f"<td>{_escape(cell)}</td>" for cell in cells) + "</tr>")
-    comparison_rows = []
-    for pair in analysis["comparisons"]:
-        left, right = series[pair["baseline"]], series[pair["candidate"]]
-        notes = list(pair["reasons"])
-        if pair["host_differences"]:
-            notes.append("Host fields differ: " + ", ".join(pair["host_differences"]))
-        if pair["historical"]:
-            notes.append("Contains historical evidence")
-        cells = [pair["case"], _label(left), _label(right), pair["metric"], pair["status"],
-                 _number(pair["ratio"]["median"]), _range(pair["ratio"]),
-                 _number(pair["speedup"]["median"]), str(pair["ratio"]["count"]), "; ".join(notes) or "Same recorded host"]
-        comparison_rows.append(f'<tr {_row_attrs(pair["case"], right["variant"], pair["metric"], pair["status"], baseline=left)}>' +
-                               "".join(f"<td>{_escape(cell)}</td>" for cell in cells) + "</tr>")
-    availability_rows = []
-    for item in analysis["availability"]:
-        cells = [item.get("case", ""), item.get("engine", ""), item.get("variant", ""),
-                 item["snapshot_id"], item["stage"], item["status"],
-                 item.get("reason", item.get("timing_interpretation", "")),
-                 item.get("timeout_seconds", ""), item.get("duration_ns", ""), item["origin"]]
-        availability_rows.append(f'<tr {_row_attrs(item.get("case", ""), item.get("variant", ""), "", item["status"])}>' +
-                                 "".join(f"<td>{_escape(cell)}</td>" for cell in cells) + "</tr>")
-    details = []
+def _presentation(analysis: dict[str, Any], output: Path) -> dict[str, Any]:
+    """Relocatable evidence links; measurement and analysis values stay untouched."""
+    snapshots = {}
     for snapshot in analysis["snapshots"]:
         directory = Path(snapshot["path"])
-        links = []
-        for name, relative in snapshot["artifacts"].items():
-            target = os.path.relpath(directory / relative, output)
-            # URL quote literal path components, without letting a path become a URI scheme.
-            links.append(f'<a href="{_escape(quote(target, safe="/"))}">{_escape(name)}</a>')
-        raw_links = []
-        for artifact in snapshot["raw_artifacts"]:
-            record_links = []
-            for name, relative in artifact["files"].items():
-                target = os.path.relpath(directory / relative, output)
-                record_links.append(f'<a href="{_escape(quote(target, safe="/"))}">{_escape(name)}</a>')
-            label = f"{artifact['task']} · {artifact['phase']} {artifact['repeat']} · {artifact['status']}"
-            raw_links.append(f"<li>{_escape(label)}: {' · '.join(record_links)}</li>")
-        contracts = []
-        for name, contract in snapshot["contracts"].items():
-            included = "".join(f"<li>{_escape(value)}</li>" for value in contract.get("included", []))
-            excluded = "".join(f"<li>{_escape(value)}</li>" for value in contract.get("excluded", []))
-            contracts.append(f'<article><h4>{_escape(name)}</h4><p>{_escape(contract.get("description", ""))}</p>'
-                             f'<strong>Included</strong><ul>{included}</ul><strong>Excluded</strong><ul>{excluded}</ul></article>')
-        details.append(f'<details><summary>{_escape(snapshot["id"])} · {_escape(snapshot["origin"])} · '
-                       f'{_escape(snapshot["created_at"])}</summary><p>{" · ".join(links)}</p>'
-                       f'<div class="contracts">{"".join(contracts)}</div>'
-                       f'<h4>Pinned tools</h4><pre>{_escape(json.dumps(snapshot["tools"], indent=2, sort_keys=True))}</pre>'
-                       f'<h4>Recorded host</h4><pre>{_escape(json.dumps(snapshot["host"], indent=2, sort_keys=True))}</pre>'
-                       f'<h4>Schedule and provenance</h4><pre>{_escape(json.dumps({"schedule": snapshot["schedule"], "provenance": snapshot["provenance"]}, indent=2, sort_keys=True))}</pre>'
-                       f'<details><summary>Raw records and logs ({len(raw_links)})</summary><ul>{"".join(raw_links)}</ul></details></details>')
-    variants = {item["variant"] for item in series.values()} | {item.get("variant", "") for item in analysis["availability"]}
-    variant_options = "".join(f'<option>{_escape(value)}</option>' for value in sorted(variants) if value)
-    metric_options = "".join(f'<option>{_escape(value)}</option>' for value in sorted({item["metric"] for item in series.values()}))
-    cases = {item["case"] for item in series.values()} | {item.get("case", "") for item in analysis["availability"]}
-    case_options = "".join(f'<option>{_escape(value)}</option>' for value in sorted(cases) if value)
-    baseline_series = [series[pair["baseline"]] for pair in analysis["comparisons"]]
-    selectors = [("engine:" + value, "Engine: " + value) for value in sorted({item["engine"] for item in baseline_series})]
-    selectors += [("variant:" + value, "Variant: " + value) for value in sorted({item["variant"] for item in baseline_series})]
-    available = {value for value, _ in selectors}
-    selected = analysis["baseline"]
-    if selected is not None:
-        default_baseline = selected if selected.startswith("engine:") else "variant:" + selected
-        if default_baseline not in available:
-            default_baseline = ""
+        def links(files: dict[str, str]) -> list[dict[str, str]]:
+            return [{"label": name, "href": quote(os.path.relpath(directory / relative, output), safe="/")}
+                    for name, relative in files.items()]
+        snapshots[snapshot["id"]] = {
+            "artifacts": links(snapshot["artifacts"]),
+            "raw_artifacts": [links(artifact["files"]) for artifact in snapshot["raw_artifacts"]],
+        }
+    return {"schema_version": 1, "snapshots": snapshots}
+
+
+def _typst() -> str:
+    pin = json.loads(resources.files("gammabench").joinpath("assets", "rendering.json").read_text(encoding="utf-8"))["compiler"]
+    required = f"{pin['name']} {pin['version']}"
+    executable = shutil.which(pin["name"])
+    if executable is None:
+        raise ValueError(f"Report rendering requires Typst {pin['version']} on PATH; see README.md for installation.")
+    version = subprocess.run([executable, "--version"], capture_output=True, text=True, check=False)
+    if version.returncode != 0 or version.stdout.split()[:2] != required.split():
+        raise ValueError(f"Report rendering requires Typst {pin['version']}; found " +
+                         (version.stdout.strip() or version.stderr.strip() or "an unreadable version"))
+    return executable
+
+
+def _copy_resource(source: Any, target: Path) -> None:
+    if source.is_dir():
+        target.mkdir()
+        for child in source.iterdir():
+            _copy_resource(child, target / child.name)
     else:
-        default_baseline = next((value for value in ("variant:baseline", "engine:linnet") if value in available), "")
-    baseline_options = "".join(f'<option value="{_escape(value)}"' +
-                               (' selected' if value == default_baseline else '') +
-                               f'>{_escape(label)}</option>' for value, label in selectors)
-    statuses = ({item["validation_status"] for item in series.values()} |
-                {pair["status"] for pair in analysis["comparisons"]} |
-                {item["status"] for item in analysis["availability"]})
-    status_options = "".join(f'<option>{_escape(value)}</option>' for value in sorted(statuses))
-    warnings = "".join(f"<li>{_escape(value)}</li>" for value in analysis["warnings"])
-    return Template(resources.files("gammabench").joinpath("assets", "report.html").read_text(encoding="utf-8")).substitute(
-        warnings=warnings, variant_options=variant_options, metric_options=metric_options,
-        case_options=case_options, baseline_options=baseline_options, status_options=status_options,
-        measurement_rows="".join(measurement_rows), comparison_rows="".join(comparison_rows),
-        availability_rows="".join(availability_rows), details="".join(details),
-    )
+        target.write_bytes(source.read_bytes())
 
 
 def _csv(path: Path, fields: list[str], rows: Any) -> None:
@@ -509,6 +421,7 @@ def render(snapshot_paths: Any, output: str | os.PathLike[str], *, baseline: str
     if any(Path(snapshot["path"]) == directory or Path(snapshot["path"]) in directory.parents
            for snapshot in analysis["snapshots"]):
         raise ValueError("Report output must be outside source snapshots.")
+    compiler = _typst()
     directory.mkdir(parents=True, exist_ok=False)
     (directory / "analysis.json").write_text(json.dumps(analysis, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
     _csv(directory / "results.csv", [
@@ -529,9 +442,18 @@ def render(snapshot_paths: Any, output: str | os.PathLike[str], *, baseline: str
         "snapshot_id", "case", "engine", "variant", "task", "stage", "status", "origin", "repeat",
         "timeout_seconds", "duration_ns", "reason", "timing_interpretation",
     ], analysis["availability"])
-    (directory / "index.html").write_text(_html(analysis, directory), encoding="utf-8")
-    for name in ("report.css", "report.js"):
-        (directory / name).write_bytes(resources.files("gammabench").joinpath("assets", name).read_bytes())
-    hashes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(directory.iterdir())}
+    (directory / "presentation.json").write_text(
+        json.dumps(_presentation(analysis, directory), indent=2, sort_keys=True, allow_nan=False) + "\n",
+        encoding="utf-8")
+    assets = resources.files("gammabench").joinpath("assets")
+    for name in ("report.typ", "components.typ", "rendering.json", "report.css", "report.js", "theme"):
+        _copy_resource(assets.joinpath(name), directory / name)
+    rendered = subprocess.run([compiler, "compile", "--root", str(directory), "--features", "html",
+                               "--creation-timestamp", "0", str(directory / "report.typ"),
+                               str(directory / "index.html")], capture_output=True, text=True, check=False)
+    if rendered.returncode != 0:
+        raise ValueError("Typst report compilation failed: " + rendered.stderr.strip())
+    hashes = {path.relative_to(directory).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+              for path in sorted(directory.rglob("*")) if path.is_file()}
     (directory / "files.sha256.json").write_text(json.dumps(hashes, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return analysis
