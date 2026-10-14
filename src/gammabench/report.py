@@ -5,11 +5,13 @@ from __future__ import annotations
 import csv
 import hashlib
 import html
+from importlib import resources
 import json
 import math
 import os
 from pathlib import Path
 import statistics
+from string import Template
 from typing import Any
 from urllib.parse import quote
 
@@ -272,9 +274,10 @@ def analyze(snapshot_paths: Any, *, baseline: str | None = None) -> dict[str, An
     """Summarize verified snapshots; never rank incomplete or unequal work.
 
     ``baseline`` selects a variant label, snapshot id, or ``engine:NAME``.
-    Without it, all pairs
-    for each case and metric are shown. Pair direction follows input snapshot
-    order, then task order. Distinct snapshots require a shared schedule
+    Without it, both directions of each pair are calculated from the raw
+    matched rounds, so reports can select any available engine or variant as
+    baseline without calculating statistics in the browser. Distinct snapshots
+    require a shared schedule
     ``pairing_id``; equal repeat numbers in independent runs are not pairs.
     Warmups never contribute to summary statistics.
     """
@@ -347,6 +350,8 @@ def analyze(snapshot_paths: Any, *, baseline: str | None = None) -> dict[str, An
             else:
                 first, second = left, right
             comparisons.append(_compare(first, second, snapshots))
+            if baseline is None:
+                comparisons.append(_compare(second, first, snapshots))
     warnings = []
     if any(item["origin"] == "historical-import" for item in metadata):
         warnings.append("Historical imports retain original evidence; these values are not new reruns.")
@@ -387,9 +392,11 @@ def _label(series: dict[str, Any]) -> str:
     return f"{series['engine']} / {series['variant']} · {series['snapshot_id']}"
 
 
-def _row_attrs(case: str, variant: str, metric: str, status: str) -> str:
-    return " ".join(f'data-{key}="{_escape(value)}"' for key, value in (
-        ("case", case), ("variant", variant), ("metric", metric), ("status", status)))
+def _row_attrs(case: str, variant: str, metric: str, status: str, *, baseline: dict[str, Any] | None = None) -> str:
+    attributes = [("case", case), ("variant", variant), ("metric", metric), ("status", status)]
+    if baseline is not None:
+        attributes.extend((("baseline-engine", baseline["engine"]), ("baseline-variant", baseline["variant"])))
+    return " ".join(f'data-{key}="{_escape(value)}"' for key, value in attributes)
 
 
 def _html(analysis: dict[str, Any], output: Path) -> str:
@@ -417,7 +424,7 @@ def _html(analysis: dict[str, Any], output: Path) -> str:
         cells = [pair["case"], _label(left), _label(right), pair["metric"], pair["status"],
                  _number(pair["ratio"]["median"]), _range(pair["ratio"]),
                  _number(pair["speedup"]["median"]), str(pair["ratio"]["count"]), "; ".join(notes) or "Same recorded host"]
-        comparison_rows.append(f'<tr {_row_attrs(pair["case"], right["variant"], pair["metric"], pair["status"])}>' +
+        comparison_rows.append(f'<tr {_row_attrs(pair["case"], right["variant"], pair["metric"], pair["status"], baseline=left)}>' +
                                "".join(f"<td>{_escape(cell)}</td>" for cell in cells) + "</tr>")
     availability_rows = []
     for item in analysis["availability"]:
@@ -456,43 +463,36 @@ def _html(analysis: dict[str, Any], output: Path) -> str:
                        f'<h4>Recorded host</h4><pre>{_escape(json.dumps(snapshot["host"], indent=2, sort_keys=True))}</pre>'
                        f'<h4>Schedule and provenance</h4><pre>{_escape(json.dumps({"schedule": snapshot["schedule"], "provenance": snapshot["provenance"]}, indent=2, sort_keys=True))}</pre>'
                        f'<details><summary>Raw records and logs ({len(raw_links)})</summary><ul>{"".join(raw_links)}</ul></details></details>')
-    variant_options = "".join(f'<option>{_escape(value)}</option>' for value in sorted({item["variant"] for item in series.values()}))
+    variants = {item["variant"] for item in series.values()} | {item.get("variant", "") for item in analysis["availability"]}
+    variant_options = "".join(f'<option>{_escape(value)}</option>' for value in sorted(variants) if value)
     metric_options = "".join(f'<option>{_escape(value)}</option>' for value in sorted({item["metric"] for item in series.values()}))
+    cases = {item["case"] for item in series.values()} | {item.get("case", "") for item in analysis["availability"]}
+    case_options = "".join(f'<option>{_escape(value)}</option>' for value in sorted(cases) if value)
+    baseline_series = [series[pair["baseline"]] for pair in analysis["comparisons"]]
+    selectors = [("engine:" + value, "Engine: " + value) for value in sorted({item["engine"] for item in baseline_series})]
+    selectors += [("variant:" + value, "Variant: " + value) for value in sorted({item["variant"] for item in baseline_series})]
+    available = {value for value, _ in selectors}
+    selected = analysis["baseline"]
+    if selected is not None:
+        default_baseline = selected if selected.startswith("engine:") else "variant:" + selected
+        if default_baseline not in available:
+            default_baseline = ""
+    else:
+        default_baseline = next((value for value in ("variant:baseline", "engine:linnet") if value in available), "")
+    baseline_options = "".join(f'<option value="{_escape(value)}"' +
+                               (' selected' if value == default_baseline else '') +
+                               f'>{_escape(label)}</option>' for value, label in selectors)
+    statuses = ({item["validation_status"] for item in series.values()} |
+                {pair["status"] for pair in analysis["comparisons"]} |
+                {item["status"] for item in analysis["availability"]})
+    status_options = "".join(f'<option>{_escape(value)}</option>' for value in sorted(statuses))
     warnings = "".join(f"<li>{_escape(value)}</li>" for value in analysis["warnings"])
-    return f'''<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>gammabench · benchmark evidence</title>
-<style>
-:root{{color-scheme:light;--ink:#162b42;--muted:#526175;--border:#dce2e8;--accent:#17647c;--paper:#f4f7fa}}
-*{{box-sizing:border-box}}body{{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 system-ui,sans-serif}}
-main{{max-width:1600px;margin:auto;padding:32px}}h1{{margin:0;font-size:32px}}h2{{margin-top:32px}}h4{{margin-bottom:8px}}
-a{{color:var(--accent)}}.subtle{{color:var(--muted)}}.notice,details{{background:white;border:1px solid var(--border);border-radius:8px;padding:16px;margin:16px 0}}
-.controls{{display:flex;flex-wrap:wrap;gap:12px;margin:24px 0}}label{{display:flex;flex-direction:column;gap:4px}}input,select{{font:inherit;padding:8px;border:1px solid var(--border);border-radius:4px;background:white}}input{{min-width:260px}}
-.tablewrap{{overflow:auto;border:1px solid var(--border);border-radius:8px;background:white}}table{{border-collapse:collapse;width:100%;font-size:13px}}th,td{{text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}}th{{background:#edf2f6;white-space:nowrap}}td:nth-child(6),td:nth-child(7),td:nth-child(8){{font-variant-numeric:tabular-nums}}tr[hidden]{{display:none}}
-summary{{cursor:pointer;font-weight:600}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.6 ui-monospace,monospace;background:#f4f7fa;padding:12px}}.contracts{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:24px}}footer{{margin-top:32px;color:var(--muted)}}@media(max-width:700px){{main{{padding:16px}}h1{{font-size:26px}}input{{min-width:200px}}}}
-</style></head><body><main><h1>gammabench</h1><p class="subtle">Verified snapshots · explicit work contracts · paired comparisons</p>
-<p><a href="results.csv">Measurement CSV</a> · <a href="comparisons.csv">Comparison CSV</a> · <a href="availability.csv">Unsupported / censored CSV</a> · <a href="analysis.json">Analysis JSON</a> · <a href="files.sha256.json">Report checksums</a></p>
-<div class="notice"><strong>How to read these results</strong><ul>{warnings}</ul><p>Summary medians use completed measurement samples. Warmups are excluded. Timeouts and missing samples remain visible and suppress pair rankings. Ratios are candidate / baseline; speedup above 1 favours the candidate using the metric's declared direction. Ratios require exact semantic qualification, equal contracts and metric scopes, and complete matching rounds.</p></div>
-<div class="controls"><label>Search cases or text<input id="search" type="search" placeholder="Filter all rows"></label><label>Candidate / measurement variant<select id="variant"><option value="">All variants</option>{variant_options}</select></label><label>Metric<select id="metric"><option value="">All metrics</option>{metric_options}</select></label><label>Qualification / comparison status<select id="status"><option value="">All statuses</option><option>passed</option><option>failed</option><option>unqualified</option><option>comparable</option><option>suppressed</option><option>unsupported</option><option>censored_timeout</option><option>timeout</option><option>invalid</option></select></label></div>
-<h2>Measurements <span id="measurement-count" class="subtle"></span></h2><div class="tablewrap"><table id="measurements"><thead><tr><th>Case</th><th>Engine / variant · snapshot</th><th>Contract</th><th>Metric</th><th>Measured scope</th><th>Median</th><th>Observed range</th><th>Unit</th><th>Samples</th><th>Qualification</th><th>Origin</th></tr></thead><tbody>{''.join(measurement_rows)}</tbody></table></div>
-<h2>Paired comparisons <span id="comparison-count" class="subtle"></span></h2><div class="tablewrap"><table id="comparisons"><thead><tr><th>Case</th><th>Baseline</th><th>Candidate</th><th>Metric</th><th>Status</th><th>Median ratio</th><th>Observed ratio range</th><th>Median speedup</th><th>Pairs</th><th>Notes</th></tr></thead><tbody>{''.join(comparison_rows)}</tbody></table></div>
-<h2>Unsupported, failed and censored work <span id="availability-count" class="subtle"></span></h2><p class="subtle">These entries are not zero timings. Qualification timeouts do not establish a lower bound on a different measured stage.</p><div class="tablewrap"><table id="availability"><thead><tr><th>Case</th><th>Engine</th><th>Variant</th><th>Snapshot</th><th>Stage</th><th>Status</th><th>Reason / timing interpretation</th><th>Cap (seconds)</th><th>Observed process duration (ns)</th><th>Origin</th></tr></thead><tbody>{''.join(availability_rows)}</tbody></table></div>
-<h2>Contracts, versions and source evidence</h2>{''.join(details)}<footer>Generated offline by gammabench. Exported HTML, CSV and JSON share the same analysis values. Source snapshots are never changed.</footer></main>
-<script>
-(() => {{
- const ids = ['search', 'variant', 'metric', 'status'];
- function filter() {{
-  const query = document.getElementById('search').value.toLowerCase();
-  const selected = Object.fromEntries(ids.slice(1).map(id => [id, document.getElementById(id).value]));
-  for (const [table, counter] of [['measurements','measurement-count'], ['comparisons','comparison-count'], ['availability','availability-count']]) {{
-   const rows = [...document.querySelectorAll('#'+table+' tbody tr')];
-   for (const row of rows) row.hidden = !row.textContent.toLowerCase().includes(query) || Object.entries(selected).some(([key,value]) => value && row.dataset[key] !== value);
-   document.getElementById(counter).textContent = '('+rows.filter(row => !row.hidden).length+' / '+rows.length+')';
-  }}
- }}
- ids.forEach(id => document.getElementById(id).addEventListener('input', filter)); filter();
-}})();
-</script></body></html>'''
+    return Template(resources.files("gammabench").joinpath("assets", "report.html").read_text(encoding="utf-8")).substitute(
+        warnings=warnings, variant_options=variant_options, metric_options=metric_options,
+        case_options=case_options, baseline_options=baseline_options, status_options=status_options,
+        measurement_rows="".join(measurement_rows), comparison_rows="".join(comparison_rows),
+        availability_rows="".join(availability_rows), details="".join(details),
+    )
 
 
 def _csv(path: Path, fields: list[str], rows: Any) -> None:
@@ -530,6 +530,8 @@ def render(snapshot_paths: Any, output: str | os.PathLike[str], *, baseline: str
         "timeout_seconds", "duration_ns", "reason", "timing_interpretation",
     ], analysis["availability"])
     (directory / "index.html").write_text(_html(analysis, directory), encoding="utf-8")
+    for name in ("report.css", "report.js"):
+        (directory / name).write_bytes(resources.files("gammabench").joinpath("assets", name).read_bytes())
     hashes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(directory.iterdir())}
     (directory / "files.sha256.json").write_text(json.dumps(hashes, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return analysis

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>gammabench · benchmark evidence</title>
+  <link rel="stylesheet" href="report.css">
+  <script src="report.js" defer></script>
+</head>
+<body>
+<main>
+  <h1>gammabench</h1>
+  <p class="subtle">Verified snapshots · explicit work contracts · paired comparisons</p>
+  <p>
+    <a href="results.csv">Measurement CSV</a> ·
+    <a href="comparisons.csv">Comparison CSV</a> ·
+    <a href="availability.csv">Unsupported / censored CSV</a> ·
+    <a href="analysis.json">Analysis JSON</a> ·
+    <a href="files.sha256.json">Report checksums</a>
+  </p>
+  <div class="notice">
+    <strong>How to read these results</strong>
+    <ul>${warnings}</ul>
+    <p>Summary medians use completed measurement samples. Warmups are excluded.
+      Timeouts and missing samples remain visible and suppress pair rankings.
+      Ratios are candidate / baseline; speedup above 1 favours the candidate
+      using the metric's declared direction. Ratios require exact semantic
+      qualification, equal contracts and metric scopes, and complete matching rounds.
+      Baseline selection filters precomputed comparisons; the browser does not
+      calculate statistics. Metric and baseline filters leave unsupported and
+      censored work visible.</p>
+  </div>
+  <div class="controls">
+    <label>Search cases or text<input id="search" type="search" placeholder="Filter all rows"></label>
+    <label>Case<select id="case"><option value="">All cases</option>${case_options}</select></label>
+    <label>Comparison baseline<select id="baseline"><option value="">All baseline directions</option>${baseline_options}</select></label>
+    <label>Candidate / measurement variant<select id="variant"><option value="">All variants</option>${variant_options}</select></label>
+    <label>Metric<select id="metric"><option value="">All metrics</option>${metric_options}</select></label>
+    <label>Qualification / comparison status<select id="status"><option value="">All statuses</option>${status_options}</select></label>
+  </div>
+  <h2>Measurements <span id="measurement-count" class="subtle"></span></h2>
+  <div class="tablewrap">
+    <table id="measurements">
+      <thead><tr><th>Case</th><th>Engine / variant · snapshot</th><th>Contract</th>
+        <th>Metric</th><th>Measured scope</th><th>Median</th><th>Observed range</th>
+        <th>Unit</th><th>Samples</th><th>Qualification</th><th>Origin</th></tr></thead>
+      <tbody>${measurement_rows}</tbody>
+    </table>
+  </div>
+  <h2>Paired comparisons <span id="comparison-count" class="subtle"></span></h2>
+  <div class="tablewrap">
+    <table id="comparisons">
+      <thead><tr><th>Case</th><th>Baseline</th><th>Candidate</th><th>Metric</th>
+        <th>Status</th><th>Median ratio</th><th>Observed ratio range</th>
+        <th>Median speedup</th><th>Pairs</th><th>Notes</th></tr></thead>
+      <tbody>${comparison_rows}</tbody>
+    </table>
+  </div>
+  <h2>Unsupported, failed and censored work <span id="availability-count" class="subtle"></span></h2>
+  <p class="subtle">These entries are not zero timings. Qualification timeouts do
+    not establish a lower bound on a different measured stage.</p>
+  <div class="tablewrap">
+    <table id="availability">
+      <thead><tr><th>Case</th><th>Engine</th><th>Variant</th><th>Snapshot</th><th>Stage</th>
+        <th>Status</th><th>Reason / timing interpretation</th><th>Cap (seconds)</th>
+        <th>Observed process duration (ns)</th><th>Origin</th></tr></thead>
+      <tbody>${availability_rows}</tbody>
+    </table>
+  </div>
+  <h2>Contracts, versions and source evidence</h2>
+  ${details}
+  <footer>Generated offline by gammabench. Exported HTML, CSV and JSON share the
+    same analysis values. Source snapshots are never changed.</footer>
+</main>
+</body>
+</html>

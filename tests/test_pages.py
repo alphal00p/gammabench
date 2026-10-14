@@ -1,0 +1,70 @@
+"""The published artifact must retain every relative report/evidence link."""
+from html.parser import HTMLParser
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+from urllib.parse import unquote, urlsplit
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class Links(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.targets = []
+
+    def handle_starttag(self, tag, attrs):
+        for key, value in attrs:
+            if key in ('href', 'src') and value:
+                self.targets.append(value)
+
+
+class PagesTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temporary = tempfile.TemporaryDirectory()
+        cls.site = Path(cls.temporary.name) / 'site'
+        subprocess.run(['bash', str(ROOT / 'scripts/build-pages.sh'), str(cls.site)], check=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temporary.cleanup()
+
+    def test_all_local_site_links_resolve_within_published_artifact(self):
+        checked = 0
+        for page in self.site.rglob('*.html'):
+            parser = Links()
+            parser.feed(page.read_text())
+            for target in parser.targets:
+                url = urlsplit(target)
+                if url.scheme or url.netloc or not url.path:
+                    continue
+                relative = unquote(url.path)
+                path = ((self.site / relative.removeprefix('/gammabench/'))
+                        if relative.startswith('/gammabench/') else page.parent / relative).resolve()
+                self.assertTrue(path.is_relative_to(self.site.resolve()), (page, target))
+                self.assertTrue(path.exists(), (page, target))
+                checked += 1
+        self.assertGreater(checked, 1000)
+
+    def test_only_published_reports_evidence_and_catalog_are_included(self):
+        self.assertTrue((self.site / 'index.html').is_file())
+        self.assertTrue((self.site / '.nojekyll').is_file())
+        self.assertTrue((self.site / 'artifacts.json').is_file())
+        self.assertTrue((self.site / 'snapshots/historical').is_dir())
+        for name in ('src', 'suites', '.git', '.venv', '.gammabench', 'tools.lock.json'):
+            self.assertFalse((self.site / name).exists(), name)
+        self.assertFalse(any(path.is_symlink() for path in self.site.rglob('*')))
+
+    def test_existing_destination_and_source_destinations_are_protected(self):
+        old = (self.site / 'index.html').read_bytes()
+        result = subprocess.run(['bash', str(ROOT / 'scripts/build-pages.sh'), str(self.site)],
+                                capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((self.site / 'index.html').read_bytes(), old)
+        forbidden = ROOT / 'snapshots/historical/new-pages-site'
+        result = subprocess.run(['bash', str(ROOT / 'scripts/build-pages.sh'), str(forbidden)],
+                                capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(forbidden.exists())

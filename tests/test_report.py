@@ -2,14 +2,51 @@
 
 import copy
 import csv
+import hashlib
+from html.parser import HTMLParser
+from importlib import resources
 import json
 from pathlib import Path
 import tempfile
 import unittest
 
-from gammabench.report import analyze, render
+from gammabench.report import _row_attrs, analyze, render
 from gammabench.schema import validate_suite
 from gammabench.snapshot import IntegrityError, seal, staging_directory
+
+
+class ReportElements(HTMLParser):
+    """Read control options and row attributes using the browser's HTML rules."""
+
+    def __init__(self, page):
+        super().__init__()
+        self.elements = []
+        self.options = {}
+        self.select = None
+        self.option = None
+        self.feed(page)
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        self.elements.append((tag, attributes))
+        if tag == "select":
+            self.select = attributes.get("id")
+            self.options[self.select] = []
+        elif tag == "option":
+            self.option = {"value": attributes.get("value"), "text": "", "selected": "selected" in attributes}
+
+    def handle_data(self, data):
+        if self.option is not None:
+            self.option["text"] += data
+
+    def handle_endtag(self, tag):
+        if tag == "option":
+            if self.option["value"] is None:
+                self.option["value"] = self.option["text"]
+            self.options[self.select].append(self.option)
+            self.option = None
+        elif tag == "select":
+            self.select = None
 
 
 class ReportTests(unittest.TestCase):
@@ -82,6 +119,35 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(first["median"], 100)
         self.assertEqual(first["warmups"], 1)
         self.assertEqual(first["count"], 3)
+
+    def test_all_baselines_recalculate_both_directions_from_even_sample_rounds(self):
+        path = self.snapshot(a=(10, 10), b=(10, 40))
+        analysis = analyze(path)
+        pairs = [pair for pair in analysis["comparisons"] if pair["metric"] == "completion_ns"]
+        self.assertEqual(len(pairs), 2)
+        forward, reverse = pairs
+        self.assertEqual((forward["baseline"], forward["candidate"]),
+                         (reverse["candidate"], reverse["baseline"]))
+        self.assertEqual(forward["ratio"]["median"], 2.5)
+        # median(1 / paired ratios) differs from 1 / median(ratios) for even N.
+        self.assertEqual(reverse["ratio"]["median"], 0.625)
+        self.assertNotEqual(reverse["ratio"]["median"], 1 / forward["ratio"]["median"])
+        self.assertEqual(reverse["speedup"], forward["ratio"])
+        self.assertEqual([sample["ratio"] for sample in reverse["pairs"]], [1, 0.25])
+        explicit = analyze(path, baseline="new")
+        explicit_pairs = [pair for pair in explicit["comparisons"] if pair["metric"] == "completion_ns"]
+        self.assertEqual(explicit_pairs, [reverse])
+
+    def test_reversed_comparisons_keep_semantic_suppression(self):
+        def change(snapshot, suite):
+            snapshot["validation"]["tasks"]["candidate-task"]["status"] = "unqualified"
+        analysis = analyze(self.snapshot(change=change))
+        self.assertEqual(len(analysis["comparisons"]), 4)
+        for pair in analysis["comparisons"]:
+            self.assertEqual(pair["status"], "suppressed")
+            self.assertIn("One or both tasks lack passed semantic validation.", pair["reasons"])
+            self.assertIsNone(pair["ratio"]["median"])
+            self.assertEqual(pair["pairs"], [])
 
     def test_contracts_are_never_ranked_together(self):
         def change(snapshot, suite):
@@ -409,6 +475,64 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(before, {file.name: file.read_bytes() for file in path.iterdir()})
         with self.assertRaises(FileExistsError):
             render(path, directory)
+
+    def test_offline_assets_are_packaged_copied_and_bound_by_report_inventory(self):
+        directory = self.root / "assets-report"
+        render(self.snapshot(), directory)
+        inventory = json.loads((directory / "files.sha256.json").read_text())
+        self.assertEqual(set(inventory), {"index.html", "report.css", "report.js", "analysis.json",
+                                          "results.csv", "comparisons.csv", "availability.csv"})
+        for name, digest in inventory.items():
+            self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), digest)
+        for name in ("report.css", "report.js"):
+            self.assertEqual((directory / name).read_bytes(),
+                             resources.files("gammabench").joinpath("assets", name).read_bytes())
+        document = ReportElements((directory / "index.html").read_text())
+        self.assertEqual([attrs["src"] for tag, attrs in document.elements if tag == "script"], ["report.js"])
+        self.assertEqual([attrs["href"] for tag, attrs in document.elements if tag == "link"], ["report.css"])
+        self.assertFalse(any(tag == "style" for tag, _ in document.elements))
+        self.assertEqual(set(document.options), {"case", "baseline", "variant", "metric", "status"})
+        self.assertIn("four-loop", {option["value"] for option in document.options["case"]})
+        self.assertIn("completion_ns", {option["value"] for option in document.options["metric"]})
+        selected = [option["value"] for option in document.options["baseline"] if option["selected"]]
+        self.assertEqual(selected, ["engine:linnet"])
+        baseline_options = {option["value"] for option in document.options["baseline"]}
+        self.assertEqual(baseline_options, {"", "engine:linnet", "variant:old", "variant:new"})
+        rows = [attrs for tag, attrs in document.elements if tag == "tr" and "data-baseline-engine" in attrs]
+        self.assertEqual(len(rows), 4)
+        self.assertEqual({row["data-baseline-variant"] for row in rows}, {"old", "new"})
+        self.assertTrue(all(row["data-baseline-engine"] == "linnet" for row in rows))
+
+    def test_full_diagram_baseline_variant_is_preferred_to_shared_engine(self):
+        def change(snapshot, suite):
+            suite["tasks"][0]["variant"] = "baseline"
+            for record in snapshot["records"]:
+                if record["task"] == "baseline-task":
+                    record["variant"] = "baseline"
+        directory = self.root / "baseline-report"
+        render(self.snapshot(change=change), directory)
+        document = ReportElements((directory / "index.html").read_text())
+        self.assertEqual([option["value"] for option in document.options["baseline"] if option["selected"]],
+                         ["variant:baseline"])
+
+    def test_explicit_baseline_report_does_not_offer_uncomputed_reverse_variant(self):
+        directory = self.root / "explicit-report"
+        render(self.snapshot(), directory, baseline="new")
+        document = ReportElements((directory / "index.html").read_text())
+        self.assertEqual([option["value"] for option in document.options["baseline"] if option["selected"]],
+                         ["variant:new"])
+        self.assertNotIn("variant:old", {option["value"] for option in document.options["baseline"]})
+        rows = [attrs for tag, attrs in document.elements if tag == "tr" and "data-baseline-variant" in attrs]
+        self.assertTrue(all(row["data-baseline-variant"] == "new" for row in rows))
+
+    def test_selector_attributes_roundtrip_literal_markup_without_injecting_nodes(self):
+        value = '\"><script>alert("unsafe")</script>'
+        page = '<tr ' + _row_attrs(value, value, value, value,
+                                  baseline={"engine": value, "variant": value}) + '></tr>'
+        document = ReportElements(page)
+        self.assertEqual([tag for tag, _ in document.elements], ["tr"])
+        self.assertEqual(document.elements[0][1], {name: value for name in (
+            "data-case", "data-variant", "data-metric", "data-status", "data-baseline-engine", "data-baseline-variant")})
 
     def test_report_destination_cannot_modify_a_source_snapshot(self):
         path = self.snapshot()

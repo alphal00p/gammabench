@@ -24,8 +24,8 @@ Rebuild a report into a new destination:
 gammabench report snapshots/historical/generation-full-public-20261014 --output results/full-report --baseline baseline
 ```
 
-GitHub shows HTML as source. Download/clone the repository to use the offline
-filters. JSON and CSV remain readable without a browser. Raw large profiles and
+Browse and compare these reports on [GitHub Pages](https://alphal00p.github.io/gammabench/).
+Downloaded reports also work offline. JSON and CSV remain readable without a browser. Raw large profiles and
 full-graph qualification dumps belong to the linked release evidence archives;
 committed snapshot records and controls preserve their original file hashes.
 

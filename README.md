@@ -1,5 +1,7 @@
 # gammabench
 
+Browse the [published results](https://alphal00p.github.io/gammabench/).
+
 Reproducible benchmarks for GammaLoop and related tools. A suite declares the
 workloads, pinned tools, required output and measurement scopes. Each execution
 produces an immutable, verifiable snapshot. Reports derive tables, comparisons,
@@ -104,3 +106,32 @@ provenance is retained separately; upstream tools keep their own terms.
 
 Compare engines with `--baseline engine:linnet`, or implementation variants
 with `--baseline baseline`. See [the preserved generation results](docs/results/README.md).
+
+
+## GitHub Pages and language boundaries
+
+The published site serves precomputed reports and their evidence. Browser filters
+select case, baseline engine/variant, metric and status; both ratio directions are
+computed from qualified raw sample pairs before publication. The browser does
+not recompute statistics or relax correctness gates.
+
+HTML, CSS and JavaScript live in `src/gammabench/assets/`. The Python report
+module derives analysis and fills the template; it does not implement a web
+server. The benchmark engines and kernels are Rust/native programs. Python
+currently handles the runner, source acquisition, snapshot integrity, analysis
+and historical imports using the standard library. Those responsibilities are
+not tied to Python: the versioned JSON protocol can be consumed by a future Rust
+CLI without changing the browser or archived result formats.
+
+The Pages workflow copies the existing reports and snapshots into a static
+artifact using Bash and GitHub Actions. It does not install or run Python.
+To preview the same artifact locally:
+
+```sh
+bash scripts/build-pages.sh .gammabench/pages-preview
+python -m http.server --directory .gammabench/pages-preview
+```
+
+The server command is optional local convenience; GitHub Pages hosts the static
+files. Keep the repository-relative report/evidence layout when copying the
+artifact, since report links point to the original sealed snapshot files.
