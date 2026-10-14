@@ -84,6 +84,29 @@ class PagesTests(unittest.TestCase):
         self.assertIn('data-theme-toggle', page)
         self.assertNotIn('<style>', page)
 
+    def test_registry_builds_separate_benchmark_workspaces(self):
+        registry = json.loads((ROOT / 'web/benchmarks.json').read_text())
+        self.assertEqual(json.loads((self.site / 'assets/benchmarks.json').read_text()), registry)
+        self.assertTrue((self.site / 'assets/workspace.js').is_file())
+        for benchmark in registry['benchmarks']:
+            page = self.site / 'benchmarks' / benchmark['id'] / 'index.html'
+            html = page.read_text()
+            self.assertIn(f'data-default-benchmark="{benchmark["id"]}"', html)
+            for tab in ('history', 'compare', 'evidence'):
+                self.assertIn(f'data-workspace-panel="{tab}"', html)
+            own_snapshots = set()
+            for path in benchmark['analyses']:
+                own_snapshots.update(snapshot['id'] for snapshot in json.loads((ROOT / path).read_text())['snapshots'])
+            displayed_studies = set(re.findall(r'class="history-series"[^>]*data-study="([^"]+)"', html))
+            self.assertTrue(displayed_studies)
+            self.assertTrue(displayed_studies <= own_snapshots)
+            for other in registry['benchmarks']:
+                self.assertIn(f'data-href="../../benchmarks/{other["id"]}/index.html"', html)
+        default = registry['default_benchmark']
+        for path in ('index.html', 'docs/results/index.html'):
+            self.assertIn(f'data-default-benchmark="{default}"', (self.site / path).read_text())
+        self.assertIn('Planned', (self.site / 'index.html').read_text())
+
     def test_existing_destination_and_source_destinations_are_protected(self):
         old = (self.site / 'index.html').read_bytes()
         result = subprocess.run(['bash', str(ROOT / 'scripts/build-pages.sh'), str(self.site)],

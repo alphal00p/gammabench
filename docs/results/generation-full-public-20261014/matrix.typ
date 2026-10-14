@@ -56,7 +56,7 @@
   if selected { attrs.insert("selected", "") }
   el("option", attrs: attrs, text)
 }
-#let matrix-select(id, title, options) = el("label", (
+#let matrix-select(id, title, options, hidden: false) = el("label", attrs: if hidden { (hidden: "") } else { (:) }, (
   el("span", title), el("select", attrs: (id: id), options),
 ).join())
 #let matrix-unique(values) = {
@@ -73,7 +73,7 @@
   if notes.len() == 0 { "" } else { notes.join("; ") }
 }
 
-#let comparison-matrix(analyses, titles: (:), initial-study: none) = {
+#let comparison-matrix(analyses, titles: (:), initial-study: none, show-study: true) = {
   let studies = ()
   let views = ()
   for analysis in analyses {
@@ -161,7 +161,7 @@
       if studies.len() > 1 {
         matrix-select("matrix-study", "Work being compared", studies.map(study => matrix-option(
           study.id, study.title, attrs: ("data-default-view": study.default-view),
-          selected: study.id == first-study.id)).join())
+          selected: study.id == first-study.id)).join(), hidden: not show-study)
       },
       matrix-select("matrix-metric", "Measurement", views.map(view => {
         let same-metric = views.filter(other => other.study == view.study and other.metric == view.metric)

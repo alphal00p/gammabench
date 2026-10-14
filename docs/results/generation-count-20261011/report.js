@@ -255,9 +255,53 @@
   }
 
   function filter() { filterEvidence(); filterMatrix(); }
+
+  function publishMatrix(origin) {
+    if (!matrix) return;
+    const active = viewMap.get(controls.metric?.value);
+    window.dispatchEvent(new CustomEvent('gammabench:matrix-change', {detail: {
+      origin, study: active?.dataset.study || selectedStudy(), view: controls.metric?.value,
+      metric: active?.dataset.metric, scope: active?.dataset.scope,
+      unit: active?.dataset.unit, direction: active?.dataset.direction, contract: active?.dataset.contract,
+      reference: controls.reference?.value, case: controls.case?.value, search: controls.search?.value,
+    }}));
+  }
+
+  // The workspace requests an existing view; all ranking stays in this matrix.
+  window.addEventListener('gammabench:matrix-select', event => {
+    if (!matrix || !event.detail) return;
+    const request = event.detail;
+    const study = request.study || selectedStudy();
+    if (!studies.has(study)) return;
+    let viewKey = request.view;
+    if (viewKey && viewMap.get(viewKey)?.dataset.study !== study) return;
+    if (!viewKey && request.metric) {
+      const matches = views.filter(view => view.dataset.study === study &&
+        view.dataset.metric === request.metric && ['scope', 'unit', 'direction', 'contract'].every(key =>
+          !request[key] || view.dataset[key] === request[key]));
+      if (matches.length !== 1) return;
+      viewKey = matches[0].dataset.matrixView;
+    }
+    viewKey = chooseView(study, viewKey || controls.metric.value);
+    const previous = controls.reference.value;
+    const candidates = referenceOptions.filter(option => option.dataset.matrixView === viewKey);
+    let reference = Object.hasOwn(request, 'reference') ? request.reference : previous;
+    if (!candidates.some(option => option.value === reference)) {
+      reference = !Object.hasOwn(request, 'reference') && study !== selectedStudy()
+        ? viewMap.get(viewKey)?.dataset.defaultReference || '' : '';
+    }
+    if (!request.preserveNotice) notice = '';
+    setView(study, viewKey, reference);
+    if (Object.hasOwn(request, 'case')) controls.case.value = hasOption(controls.case, request.case) ? request.case : '';
+    if (typeof request.search === 'string') controls.search.value = request.search;
+    for (const id of ['case', 'search']) if (evidence[id]) evidence[id].value = controls[id].value;
+    filter();
+    if (request.writeQuery !== false) writeQuery();
+    publishMatrix('workspace');
+  });
   for (const [id, control] of Object.entries(evidence)) control.addEventListener('input', () => {
     if (matrix && ['case', 'search'].includes(id)) controls[id].value = control.value;
-    filter(); writeQuery(id === 'search');
+    filter(); writeQuery(id === 'search'); publishMatrix('control');
   });
   for (const [id, control] of Object.entries(controls)) if (control) control.addEventListener('input', () => {
     notice = '';
@@ -278,8 +322,8 @@
       setView(study, viewKey, reference);
     }
     if (['case', 'search'].includes(id) && evidence[id]) evidence[id].value = control.value;
-    filter(); writeQuery(id === 'search');
+    filter(); writeQuery(id === 'search'); publishMatrix('control');
   });
-  window.addEventListener('popstate', () => { restore(); filter(); });
-  restore(); filter();
+  window.addEventListener('popstate', () => { restore(); filter(); publishMatrix('restore'); });
+  restore(); filter(); publishMatrix('initial');
 })();

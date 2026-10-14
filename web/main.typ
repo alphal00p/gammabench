@@ -1,68 +1,180 @@
 #import "/src/gammabench/assets/components.typ": *
 #import "/src/gammabench/assets/matrix.typ": comparison-matrix
-#let studies = json("studies.json")
-#let analyses = studies.map(study => json("/docs/results/" + study.id + "/analysis.json"))
-#let titles = (:)
-#for study in studies { titles.insert(study.id, study.title) }
-#let overview = comparison-matrix(
-  analyses,
-  titles: titles,
-  initial-study: "generation-materialized-20261012",
-)
+#import "/src/gammabench/assets/history.typ": benchmark-history
+
+#let registry = json("benchmarks.json")
+#assert(registry.schema_version == 1, message: "Unsupported benchmark registry version")
+#let benchmark-ids = registry.benchmarks.map(benchmark => benchmark.id)
+#let family-ids = registry.families.map(family => family.id)
+#assert(benchmark-ids.dedup().len() == benchmark-ids.len(), message: "Duplicate benchmark ID")
+#assert(family-ids.dedup().len() == family-ids.len(), message: "Duplicate benchmark family ID")
+#assert(benchmark-ids.contains(registry.default_benchmark), message: "Default benchmark is missing")
+
+// Combine original arrays for display, without calculating new comparisons or
+// changing source measurements. Appending a capture preserves the study anchor.
+#let entries = registry.benchmarks.map(benchmark => {
+  assert(benchmark.id.match(regex("^[a-z0-9][a-z0-9-]*$")) != none, message: "Benchmark ID must be a safe URL segment")
+  assert(family-ids.contains(benchmark.family), message: "Unknown benchmark family")
+  assert(benchmark.analyses.len() > 0, message: "A benchmark requires a capture")
+  assert(benchmark.analyses.len() == benchmark.reports.len(), message: "Every analysis needs its report")
+  let captures = benchmark.analyses.map(path => {
+    assert(path.starts-with("docs/results/") and path.ends-with("/analysis.json")
+      and not path.split("/").contains(".."), message: "Analysis must be a retained report path")
+    json("/" + path)
+  })
+  for (index, path) in benchmark.reports.enumerate() {
+    assert(path == benchmark.analyses.at(index).replace("/analysis.json", "/index.html"),
+      message: "Evidence report must accompany its registered analysis")
+    assert(path.starts-with("docs/results/") and path.ends-with("/index.html")
+      and not path.split("/").contains(".."), message: "Report must be a retained report path")
+  }
+  let snapshots = captures.map(capture => capture.snapshots).flatten()
+  let snapshot-ids = snapshots.map(snapshot => snapshot.id)
+  assert(snapshot-ids.dedup().len() == snapshot-ids.len(), message: "Capture registered more than once")
+  let series = captures.map(capture => capture.series).flatten()
+  assert(series.map(item => item.id).dedup().len() == series.len(), message: "Duplicate measurement identity")
+  let baseline = captures.first().baseline
+  let analysis = (
+    schema_version: 1,
+    baseline: if captures.all(capture => capture.baseline == baseline) { baseline } else { none },
+    snapshots: snapshots,
+    series: series,
+    comparisons: captures.map(capture => capture.comparisons).flatten(),
+    availability: captures.map(capture => capture.availability).flatten(),
+    warnings: captures.map(capture => capture.warnings).flatten().dedup(),
+  )
+  (benchmark: benchmark, captures: captures, study: snapshots.first().id, analysis: analysis)
+})
+#assert(entries.map(entry => entry.study).dedup().len() == entries.len(), message: "A capture cannot anchor two benchmarks")
+#let default-entry = entries.find(entry => entry.benchmark.id == registry.default_benchmark)
+#let workspace(entry: default-entry, root: "", assets: "assets/") = {
+  let analyses = (entry.analysis,)
+  let titles = (:)
+  titles.insert(entry.study, entry.benchmark.title)
+  let reports = (:)
+  let capture-modes = (:)
+  for snapshot in entry.analysis.snapshots {
+    capture-modes.insert(snapshot.id, entry.benchmark.at("capture_modes", default: (:)))
+  }
+  for (index, capture) in entry.captures.enumerate() {
+    for snapshot in capture.snapshots { reports.insert(snapshot.id, root + entry.benchmark.reports.at(index)) }
+  }
+  el("div", class: "workspace", attrs: (
+    id: "benchmark-workspace", "data-default-benchmark": entry.benchmark.id,
+    "data-default-tab": "history",
+  ))[
+    #el("aside", class: "workspace-sidebar", attrs: ("aria-label": "Benchmark navigation"))[
+      == Benchmarks
+
+      #for family in registry.families {
+        let benchmarks = entries.filter(entry => entry.benchmark.family == family.id)
+        if benchmarks.len() > 0 {
+          el("details", attrs: (open: ""))[
+            #el("summary", family.title)
+            #el("nav", attrs: ("aria-label": family.title), benchmarks.map(entry => el(
+              "a", class: "workspace-benchmark", attrs: (
+                href: root + "benchmarks/" + entry.benchmark.id + "/index.html",
+                "data-benchmark-id": entry.benchmark.id,
+                "data-study": entry.study, "data-title": entry.benchmark.title,
+                "data-description": entry.benchmark.description, "data-family": family.title,
+                "data-definition-version": entry.benchmark.definition_version,
+                "data-default-metric": entry.benchmark.default_metric,
+                "data-href": root + "benchmarks/" + entry.benchmark.id + "/index.html",
+              ), entry.benchmark.title,
+            )).join())
+          ]
+        } else {
+          el("p", class: "workspace-planned")[#family.title #el("span")[Planned]]
+        }
+      }
+      #el("p", class: "workspace-registry")[#link(assets + "benchmarks.json")[Benchmark registry]]
+    ]
+    #el("section", class: "workspace-main", attrs: ("aria-label": "Selected benchmark"))[
+      #el("header", class: "workspace-heading")[
+        #el("p", class: "workspace-breadcrumb", attrs: (id: "workspace-family"))[
+          #registry.families.find(family => family.id == entry.benchmark.family).title
+        ]
+        #el("h1", attrs: (id: "workspace-title"), entry.benchmark.title)
+        #el("p", attrs: (id: "workspace-description"), entry.benchmark.description)
+      ]
+      #el("nav", class: "workspace-tabs", attrs: (role: "tablist", "aria-label": "Benchmark views"),
+        ("history", "compare", "evidence").map(tab => el("button", attrs: (
+          type: "button", role: "tab", id: "workspace-tab-" + tab,
+          "data-workspace-tab": tab, "aria-controls": "workspace-" + tab,
+          "aria-selected": if tab == "history" { "true" } else { "false" },
+        ), (history: "History", compare: "Compare", evidence: "Evidence").at(tab))).join(),
+      )
+      #el("section", class: "workspace-panel", attrs: (
+        id: "workspace-history", "data-workspace-panel": "history", role: "tabpanel",
+        "aria-labelledby": "workspace-tab-history",
+      ))[
+        #benchmark-history(analyses, subjects: registry.subjects, reports: reports,
+          capture-modes: capture-modes, initial-study: entry.study,
+          initial-case: entry.benchmark.at("default_case", default: none),
+          initial-metric: entry.benchmark.default_metric)
+      ]
+      #el("section", class: "workspace-panel", attrs: (
+        id: "workspace-compare", "data-workspace-panel": "compare", role: "tabpanel", hidden: "",
+        "aria-labelledby": "workspace-tab-compare",
+      ))[
+        #comparison-matrix(analyses, titles: titles, initial-study: entry.study, show-study: false)
+      ]
+      #el("section", class: "workspace-panel", attrs: (
+        id: "workspace-evidence", "data-workspace-panel": "evidence", role: "tabpanel", hidden: "",
+        "aria-labelledby": "workspace-tab-evidence",
+      ))[
+        #el("section", class: "workspace-evidence", attrs: (
+          "data-workspace-evidence": "", "data-study": entry.study,
+        ))[
+          == #entry.benchmark.title
+
+          Definition version: #entry.benchmark.definition_version. Captures retain their original versions, qualification and measurement boundaries.
+
+          #el("ul", entry.benchmark.reports.map(path => el("li", link(root + path)[Complete report and raw evidence])).join())
+          #el("ul", entry.benchmark.analyses.map(path => el("li", [
+            #link(root + path)[Analysis JSON] ·
+            #link(root + path.replace("analysis.json", "results.csv"))[Measurements CSV] ·
+            #link(root + path.replace("analysis.json", "comparisons.csv"))[Comparisons CSV] ·
+            #link(root + path.replace("analysis.json", "availability.csv"))[Unavailable / failed CSV]
+          ])).join())
+          #for snapshot in entry.analysis.snapshots {
+            el("details")[
+              #el("summary", snapshot.id + " · " + snapshot.origin)
+              #el("p")[#link(reports.at(snapshot.id))[Source report with sealed snapshot and checksums]]
+              #el("pre", json.encode((contracts: snapshot.contracts, metrics: snapshot.metrics,
+                host: snapshot.host), pretty: true))
+            ]
+          }
+        ]
+        #el("p")[#link(root + "artifacts.json")[Large artifact index] · #link("https://github.com/alphal00p/gammabench/releases/tag/v0.1.0")[Raw evidence archives]]
+      ]
+    ]
+  ]
+}
 
 #document("index.html")[
-  #bench-document(
-    "Benchmark results",
-    "Browse versioned GammaLoop benchmarks, compare equivalent outputs, and inspect measurement evidence.",
-    assets: "assets/", home: "index.html", interactive: true,
-  )[
-    #hero(compact: true)[
-      #kicker[Public research · captured measurements]
-
-      = Compare benchmark results
-
-      Choose the output, metric and reference. Each row compares the same workload; coloured cells have a qualified comparison against the reference.
-    ]
-    #section[#overview]
-    #section[
-      #el("details")[
-        #el("summary")[Study reports and evidence]
-        #study-cards(studies, "docs/results/")
-        Each study retains its original measurements, output contract, tool versions and qualification evidence.
-
-        #link("artifacts.json")[Artifact index] · #link("https://github.com/alphal00p/gammabench/releases/tag/v0.1.0")[Download raw evidence]
-      ]
-    ]
-  ]
+  #bench-document("Benchmark workspace", "Browse benchmark families, follow measured tool commits and compare qualified results.",
+    assets: "assets/", home: "index.html", interactive: true, scripts: ("workspace.js",),
+  )[#workspace()]
 ]
-
 #document("docs/results/index.html")[
-  #bench-document("Preserved results", "Historical generation studies with explicit output and measurement contracts.", assets: "../../assets/", home: "../../index.html", interactive: true)[
-    #hero(compact: true)[
-      #kicker[Captured measurements · source evidence]
-
-      = Compare preserved results
-
-      Select the output and reference before comparing workloads.
-    ]
-    #section[#overview]
-    #section[
-      #el("details")[
-        #el("summary")[Individual study reports]
-        #study-cards(studies, "")
-      ]
-    ]
-  ]
+  #bench-document("Benchmark workspace", "Preserved benchmark captures, commit histories and exact source evidence.",
+    assets: "../../assets/", home: "../../index.html", interactive: true, scripts: ("workspace.js",),
+  )[#workspace(root: "../../", assets: "../../assets/")]
 ]
-
+#for entry in entries {
+  document("benchmarks/" + entry.benchmark.id + "/index.html")[
+    #bench-document(entry.benchmark.title, entry.benchmark.description,
+      assets: "../../assets/", home: "../../index.html", interactive: true, scripts: ("workspace.js",),
+    )[#workspace(entry: entry, root: "../../", assets: "../../assets/")]
+  ]
+}
 #document("404.html")[
-  #bench-document("Page not found", "Return to the gammabench results catalog.", assets: "/gammabench/assets/", home: "/gammabench/")[
-    #hero[
-      #kicker[Page not found]
+  #bench-document("Page not found", "Return to the benchmark workspace.", assets: "/gammabench/assets/", home: "/gammabench/")[
+    #hero(compact: true)[
+      = Page not found
 
-      = That result page could not be found.
-
-      Return to #link("/gammabench/")[gammabench results], or inspect the #link("https://github.com/alphal00p/gammabench")[source repository].
+      Return to #link("/gammabench/")[the benchmark workspace].
     ]
   ]
 ]

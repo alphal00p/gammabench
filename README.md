@@ -116,26 +116,56 @@ public Pages palette with compact, single-font monospace typography. The upstrea
 vendored unchanged at a complete revision with SHA-256 provenance and licenses
 in `src/gammabench/assets/theme/`.
 
-The front page shows a comparison matrix: workloads are rows and tool/implementation
-versions are columns. Select the output, measured stage and exact reference. Cells
-show readable units and the stored paired relative result. Green means better
-than the reference, yellow is equal, and red means worse; the fixed colour scale
-saturates at a twofold difference. Unqualified, missing and ambiguous captures
-remain neutral with their reasons. Colour always compares one workload to its
-reference, rather than comparing unrelated absolute workload costs.
+The site is a benchmark workspace. Choose a benchmark in the family navigation,
+then use **History**, **Compare** or **Evidence**. Each benchmark has a stable
+static URL and loads only its own captures. Families without captures are labelled
+Planned. Links retain the selected view, workload, metric and reference.
 
-All reference directions come from the precomputed analysis. The browser changes
-which result is shown; it never inverts a median or computes a new statistic.
-Unsupported and censored entries stay visible when metric/reference selection
-changes. Full tables, contracts, versions and raw evidence remain expandable.
+History plots captured medians and observed min/max ranges against the actual
+measured tool commits. It separates workload inputs, metric scope/unit/direction,
+output contract, hardware, capture mode and fixed dependencies. Archive-only
+sources, dirty or missing pins, failed and censored results remain evidence rather
+than fabricated commit points. A single revision is shown as one point, and two
+revisions remain a two-point history. Ranges are not confidence intervals.
 
-The landing pages are authored in `web/main.typ`. Report content, tables,
-controls and evidence sections are authored in `src/gammabench/assets/report.typ`
-and `matrix.typ`,
-with a shared semantic HTML boundary in `components.typ`. Typst 0.15.1 compiles
-both to ordinary static HTML. CSS handles responsive browser layout and light/dark
-styling; JavaScript handles the comparison filters. No web server or browser
-Python runtime is needed.
+Compare shows workloads as rows and tool/implementation versions as columns.
+Select the measured stage and exact reference. Cells show readable units and the
+stored paired relative result. Green means better than the reference, yellow is
+equal, and red means worse; the fixed colour scale saturates at a twofold
+difference. Unqualified, missing and ambiguous captures remain neutral with their
+reasons. Colour compares one workload to its reference, rather than unrelated
+absolute workload costs. All reference directions come from precomputed analysis;
+the browser never inverts a median or computes a new statistic.
+
+Evidence links to retained reports, analysis, CSV, snapshot records and checksums.
+The workspace does not rewrite captures or create cross-capture paired comparisons.
+Existing complete reports remain available at their original URLs.
+
+The workspace is authored in `web/main.typ`. The versioned
+[`web/benchmarks.json`](web/benchmarks.json) registry declares families, stable
+benchmark IDs, definition versions, default metrics/workloads and paired arrays of retained
+`analyses`/`reports` paths. Add a benchmark there after generating its report; append
+captures to the same entry when the benchmark definition remains compatible.
+Keep a new definition under a new benchmark ID when its meaning changes. The
+first registered snapshot anchors the display identity, so retain capture order.
+
+`subjects` maps engine IDs to measured tool bindings and optional source-repository
+links. Normal captures with different task IDs are conservatively separate unless
+`capture_modes` explicitly maps each task ID to the same capture mode (for example,
+`"timing"`). Use different modes for instrumented and native execution. Historical
+explicit profile provenance takes priority. Unknown modes remain separate; do not
+declare equivalence just to obtain a line. Normal analysis metadata does not yet
+expose complete task environment/build settings, so its points remain separate by
+snapshot and task even when a mode is declared. Historical lines require the
+retained controller identity as well as matching context. These are presentation declarations;
+original source pins and measurement definitions still come from each snapshot.
+
+Report content, controls and evidence are authored in
+`src/gammabench/assets/report.typ`, `matrix.typ` and `history.typ`, with a shared
+semantic HTML boundary in `components.typ`. Pinned Typst 0.15.1 compiles these to
+ordinary static HTML. CSS handles responsive layout and light/dark styling;
+JavaScript switches views and plots the frozen values. No browser Python runtime
+or application server is needed.
 
 Python produces the offline analysis JSON and CSV using the existing correctness
 gates. Typst consumes that JSON and a separate relative-link map; it does not

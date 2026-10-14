@@ -12,7 +12,7 @@
 
 #let bench-document(
   title, description, body,
-  assets: "", home: "https://alphal00p.github.io/gammabench/", interactive: false,
+  assets: "", home: "https://alphal00p.github.io/gammabench/", interactive: false, scripts: (),
 ) = el("html", attrs: (lang: "en"))[
   #el("head")[
     #void("meta", attrs: (charset: "utf-8"))
@@ -24,6 +24,7 @@
     #void("link", attrs: (rel: "stylesheet", href: assets + "report.css"))
     #el("script", attrs: (defer: "", src: assets + "theme/site.js"))[]
     #if interactive { el("script", attrs: (defer: "", src: assets + "report.js"))[] }
+    #for script in scripts { el("script", attrs: (defer: "", src: assets + script))[] }
   ]
   #el("body", class: "portal-body bench-body")[
     #el("a", class: "skip-link", attrs: (href: "#main-content"))[Skip to content]
