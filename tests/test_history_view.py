@@ -47,7 +47,7 @@ class HistoryViewTests(unittest.TestCase):
         for name in ("history.typ", "matrix.typ", "components.typ"):
             (self.root / name).write_bytes(resources.files("gammabench").joinpath("assets", name).read_bytes())
 
-    def compile(self, analysis, *, reports=None, capture_modes=None):
+    def compile(self, analysis, *, reports=None, capture_modes=None, proposals=None):
         self.compilations += 1
         stem = f"history-{self.compilations}"
         data = self.root / (stem + ".json")
@@ -58,8 +58,10 @@ class HistoryViewTests(unittest.TestCase):
         links.write_text(json.dumps(reports or {}))
         modes = self.root / (stem + "-modes.json")
         modes.write_text(json.dumps(capture_modes or {}))
+        proposed = self.root / (stem + "-proposals.json")
+        proposed.write_text(json.dumps(proposals or {}))
         template.write_text('#import "history.typ": benchmark-history\n'
-                            f'#benchmark-history((json("{data.name}"),), reports: json("{links.name}"), capture-modes: json("{modes.name}"), subjects: '
+                            f'#benchmark-history((json("{data.name}"),), reports: json("{links.name}"), capture-modes: json("{modes.name}"), proposals: json("{proposed.name}"), subjects: '
                             '(linnet: (tool: "gammaloop", repository: "https://github.com/alphal00p/gammaloop")))\n')
         output = self.root / (stem + ".html")
         result = subprocess.run(["typst", "compile", "--root", str(self.root), "--features", "html",
@@ -175,6 +177,17 @@ class HistoryViewTests(unittest.TestCase):
                 _, document = self.compile(analysis)
                 self.assertEqual(len(document.points), 2)
                 self.assertEqual(len(document.groups), 2)
+
+    def test_proposed_candidate_is_marked_without_interrupting_main_capture_indices(self):
+        analysis = self.ci_analysis()
+        self.append_ci_capture(analysis, "proposal", "c" * 40, "2026-10-15T12:00:00Z")
+        self.append_ci_capture(analysis, "next-main", "d" * 40, "2026-10-16T12:00:00Z")
+        proposals = {"proposal": {"pr": 123, "baseline": "b" * 40}}
+        page, document = self.compile(analysis, proposals=proposals)
+        self.assertEqual([point["data-commit"] for point in document.points], ["b" * 40, "c" * 40, "d" * 40])
+        self.assertEqual([point["data-capture-index"] for point in document.points], ["0", "-1", "1"])
+        self.assertEqual([point["data-history-role"] for point in document.points], ["main", "proposed", "main"])
+        self.assertIn("Proposed PR #123", page)
 
     def test_measured_tool_commits_join_across_captures_without_mutating_analysis(self):
         analysis = self.simple_analysis()

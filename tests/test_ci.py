@@ -11,7 +11,13 @@ from unittest.mock import patch
 
 import test_gate
 
-from gammabench.ci import assemble_previews, ingest, validate_bundle
+from gammabench.ci import (
+    assemble_previews,
+    ingest,
+    inventory,
+    prepare_preview,
+    validate_bundle,
+)
 from gammabench.snapshot import write_json
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,20 +45,30 @@ class PublicationTests(unittest.TestCase):
             },
         )
 
-    def bundle(self, *, event="pull_request", run_id=10, mode="clean"):
+    def bundle(
+        self,
+        *,
+        event="pull_request",
+        run_id=10,
+        mode="clean",
+        baseline="a" * 40,
+        candidate="b" * 40,
+    ):
         ci = {
             "repository": "alphal00p/gammaloop",
             "repository_url": "https://github.com/alphal00p/gammaloop",
-            "candidate": "b" * 40,
+            "candidate": candidate,
             "framework_revision": "f" * 40,
-            "baseline": "a" * 40,
+            "baseline": baseline,
             "run_id": run_id,
             "run_attempt": 1,
             "event": event,
             "pr": 123 if event == "pull_request" else None,
         }
         self.fixture.suite["ci"] = ci
-        status, public = self.fixture.capture(mode)
+        self.fixture.suite["gate"]["baseline"]["commit"] = baseline
+        self.fixture.suite["gate"]["candidate"]["commit"] = candidate
+        status, public = self.fixture.capture(mode, label=f"ci-{event}-{run_id}")
         bundle = self.root / "bundle"
         bundle.mkdir()
         shutil.move(public, bundle / "demo")
@@ -80,13 +96,19 @@ class PublicationTests(unittest.TestCase):
         )
         site = self.root / "site"
         site.mkdir()
-        assemble_previews(self.checkout, site, ROOT)
+        assemble_previews(self.checkout, site, ROOT, main_root=self.checkout)
         page = site / result["path"] / "index.html"
         self.assertTrue(page.exists())
         self.assertIn("PR #123", page.read_text())
         self.assertTrue((site / "previews/pr-123/index.html").exists())
         self.assertTrue((site / "previews/index.html").exists())
         self.assertTrue((page.parent / "explore.html").exists())
+        self.assertIn('http-equiv="refresh"', page.read_text())
+        self.assertIn("ci-history/index.html", page.read_text())
+        self.assertTrue((page.parent / "summary.html").exists())
+        history = (page.parent / "ci-history/index.html").read_text()
+        self.assertIn('data-history-role="proposed"', history)
+        self.assertIn("Proposed PR #123", history)
         self.assertTrue(
             list((page.parent / "snapshots/measured").glob("*/files.sha256.json"))
         )
@@ -109,6 +131,31 @@ class PublicationTests(unittest.TestCase):
         ]["123"]
         self.assertIsNone(entry["latest"])
         self.assertEqual(len(entry["captures"]), 1)
+        site = self.root / "stale-site"
+        assemble_previews(self.checkout, site, ROOT, main_root=self.checkout)
+        self.assertNotIn(
+            'http-equiv="refresh"', (site / "previews/pr-123/index.html").read_text()
+        )
+
+    def test_preview_without_measurements_still_shows_main_and_failure(self):
+        main = self.root / "main"
+        shutil.copytree(self.checkout, main)
+        bundle = self.bundle(event="push")
+        ingest(bundle, main, channel="main")
+        manifest = json.loads((bundle / "run.json").read_text())
+        manifest.update(cases=[], status=2)
+        manifest["ci"].update(event="pull_request", pr=123, run_id=20)
+        failed = self.root / "failed"
+        failed.mkdir()
+        write_json(failed / "run.json", manifest)
+        result = ingest(failed, self.checkout, channel="pr", current_head="b" * 40)
+        site = self.root / "failed-site"
+        assemble_previews(self.checkout, site, ROOT, main_root=main)
+        page = (site / result["path"] / "ci-history/index.html").read_text()
+        self.assertIn("Inconclusive", page)
+        self.assertIn("No candidate measurements are available", page)
+        self.assertIn('data-history-role="main"', page)
+        self.assertNotIn('data-history-role="proposed"', page)
 
     def test_multiple_prs_and_older_runs_preserve_latest_and_build_failure_page(self):
         bundle = self.bundle()
@@ -129,7 +176,9 @@ class PublicationTests(unittest.TestCase):
         site = self.root / "failure-site"
         # Match the workflow's relative destination, which must be resolved
         # before the builder changes cwd to its temporary content checkout.
-        assemble_previews(self.checkout, os.path.relpath(site), ROOT)
+        assemble_previews(
+            self.checkout, os.path.relpath(site), ROOT, main_root=self.checkout
+        )
         self.assertTrue((site / "previews/pr-123/index.html").is_file())
         self.assertTrue((site / "previews/pr-124/index.html").is_file())
         self.assertIn(
@@ -147,6 +196,58 @@ class PublicationTests(unittest.TestCase):
     def test_main_history_rejects_pr_delivery(self):
         with self.assertRaises(ValueError):
             ingest(self.bundle(), self.checkout, channel="main")
+
+    def test_preview_combines_main_history_without_changing_either_archive(self):
+        main = self.root / "main"
+        shutil.copytree(self.checkout, main)
+        ingest(self.bundle(event="push"), main, channel="main")
+        fixture = test_gate.GateTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        with (
+            patch.object(self, "fixture", fixture),
+            patch.object(self, "root", fixture.root),
+        ):
+            bundle = self.bundle(run_id=20, baseline="b" * 40, candidate="c" * 40)
+        result = ingest(bundle, self.checkout, channel="pr", current_head="c" * 40)
+        source = self.checkout / result["path"]
+        before_main, before_pr = inventory(main), inventory(source)
+        prepared = self.root / "prepared"
+        prepared.mkdir()
+        registry, proposals = prepare_preview(source, prepared, main)
+        entry = registry["benchmarks"][0]
+        self.assertEqual(len(entry["analyses"]), 2)
+        self.assertEqual(proposals, ["ci-pull_request-20-discovery"])
+        self.assertTrue(
+            (
+                prepared / "snapshots/measured/ci-push-10-discovery/files.sha256.json"
+            ).exists()
+        )
+        site = self.root / "combined-site"
+        assemble_previews(self.checkout, site, ROOT, main_root=main)
+        from test_history_view import HistoryElements
+
+        page = site / result["path"] / "benchmarks/gammaloop-ci-demo/index.html"
+        history = HistoryElements(page.read_text())
+        self.assertEqual(
+            {point["data-commit"] for point in history.points}, {"b" * 40, "c" * 40}
+        )
+        proposed = [
+            point
+            for point in history.points
+            if point["data-history-role"] == "proposed"
+        ]
+        self.assertEqual(len(proposed), 1)
+        self.assertEqual(proposed[0]["data-commit"], "c" * 40)
+        self.assertEqual(proposed[0]["data-baseline-commit"], "b" * 40)
+        self.assertEqual(proposed[0]["data-pr"], "123")
+        self.assertIn('data-default-tab="history"', page.read_text())
+        self.assertEqual(inventory(main), before_main)
+        self.assertEqual(inventory(source), before_pr)
+        stable = (site / "previews/pr-123/index.html").read_text()
+        self.assertIn('http-equiv="refresh"', stable)
+        self.assertIn("20-1/index.html", stable)
+        self.assertTrue((site / "previews/pr-123/runs.html").is_file())
 
     def test_conflicting_duplicate_is_rejected(self):
         bundle = self.bundle()

@@ -4,7 +4,32 @@
 #import "explorer.typ": explorer
 
 #let projected = json(sys.inputs.at("catalog-path"))
-#let explorer-catalog = (schema_version: projected.schema_version, fields: projected.fields, cases: projected.cases)
+#let preview-path = sys.inputs.at("preview-context", default: "")
+#let preview = if preview-path == "" { none } else { json(preview-path) }
+#let proposals = if preview == none { (:) } else {
+  let values = (:)
+  for id in preview.snapshots { values.insert(id, preview.ci) }
+  values
+}
+#let explorer-catalog = (schema_version: projected.schema_version, fields: projected.fields,
+  cases: projected.cases.map(item => if preview == none { item } else { item + (href: item.href.replace("tab=compare", "tab=history")) }))
+#let preview-notice(root) = if preview != none {
+  el("aside", class: "preview-notice", attrs: ("aria-label": "Proposed PR measurement"))[
+    #el("strong", "Proposed PR #" + str(preview.ci.pr) + " · " + preview.ci.candidate.slice(0, 12))
+    #el("p", "Gate: " + ("Passed", "Regression or correctness failure", "Inconclusive").at(preview.status))
+    #el("p")[Published main history is shown for context. Hollow diamond markers identify this PR's measured candidate; they do not represent a merged main commit.]
+    #if preview.snapshots.len() == 0 { el("p")[No candidate measurements are available for this run.] }
+    #if preview.at("missing_cases", default: ()).len() > 0 {
+      el("p", "PR measurements unavailable for: " + preview.missing_cases.join(", ") + ".")
+    }
+    #el("p")[
+      #link(preview.ci.repository_url + "/pull/" + str(preview.ci.pr))[Pull request] ·
+      #link(root + "summary.html")[Run summary] ·
+      #link(root + "../../runs.html")[All runs for this PR] ·
+      #link("https://alphal00p.github.io/gammabench/ci-history/")[Main history]
+    ]
+  ]
+}
 
 #let registry = json("benchmarks.json")
 #assert(registry.schema_version == 1, message: "Unsupported benchmark registry version")
@@ -77,7 +102,7 @@
     "data-default-tab": "history",
   ))[
     #el("aside", class: "workspace-sidebar", attrs: ("aria-label": "Benchmark navigation"))[
-      #el("p", class: "workspace-registry")[#link(root + "index.html")[← Explore all benchmarks]]
+      #el("p", class: "workspace-registry")[#link(root + if preview == none { "index.html" } else { "explore.html" })[← Explore all benchmarks]]
       == Benchmarks
 
       #for family in registry.families {
@@ -102,6 +127,7 @@
       #el("p", class: "workspace-registry")[#link(assets + "benchmarks.json")[Benchmark registry]]
     ]
     #el("section", class: "workspace-main", attrs: ("aria-label": "Selected benchmark"))[
+      #preview-notice(root)
       #el("header", class: "workspace-heading")[
         #el("p", class: "workspace-breadcrumb", attrs: (id: "workspace-family"))[
           #registry.families.find(family => family.id == entry.benchmark.family).title
@@ -126,7 +152,7 @@
         #if entry.analysis == none {
           planned-message(entry)
         } else {
-          benchmark-history(analyses, subjects: registry.subjects, reports: reports,
+          benchmark-history(analyses, subjects: registry.subjects, reports: reports, proposals: proposals,
             capture-modes: capture-modes, initial-study: entry.study,
             initial-case: entry.benchmark.at("default_case", default: none),
             initial-metric: entry.benchmark.default_metric)
@@ -189,8 +215,9 @@
 
 #document("index.html")[
   #bench-document("Explore benchmarks", "Search benchmark cases and retained configurations across GammaLoop and related tools.",
-    assets: "assets/", home: "index.html", scripts: ("explorer.js",), styles: ("explorer.css",),
+    assets: "assets/", home: if preview == none { "index.html" } else { "explore.html" }, scripts: ("explorer.js",), styles: ("explorer.css",),
   )[
+    #preview-notice("")
     #if registry.families.any(family => family.id == "gammaloop-ci") {
       el("p", link("ci-history/index.html", [GammaLoop CI history · compare workloads →]))
     }
@@ -200,12 +227,13 @@
 #if registry.families.any(family => family.id == "gammaloop-ci") {
   document("ci-history/index.html")[
     #bench-document("GammaLoop CI history", "Compare the evolution of several workloads using one metric and shared units.",
-      assets: "../assets/", home: "../index.html", scripts: ("workspace.js",),
+      assets: "../assets/", home: if preview == none { "../index.html" } else { "../explore.html" }, scripts: ("workspace.js",),
     )[
       #hero(compact: true)[
         = GammaLoop CI history
         Select a measurement, then choose the workloads to plot together.
       ]
+      #preview-notice("../")
       #let ci-entries = entries.filter(entry => entry.benchmark.family == "gammaloop-ci" and entry.analysis != none)
       #if ci-entries.len() == 0 {
         el("p", [No CI measurements have been published yet.])
@@ -226,7 +254,7 @@
           "data-default-study": study, "data-default-tab": "history", "data-multi-workload": "true"))[
           #el("a", attrs: (href: "index.html", "data-benchmark-id": "gammaloop-ci-history",
             "data-study": study, "data-default-metric": "generation_seconds"), [All CI workloads])
-          #benchmark-history((analysis,), subjects: registry.subjects, reports: reports, comparisons: comparisons,
+          #benchmark-history((analysis,), subjects: registry.subjects, reports: reports, comparisons: comparisons, proposals: proposals,
             initial-study: study, initial-metric: "generation_seconds", multi-workload: true)
         ]
       }
@@ -235,13 +263,13 @@
 }
 #document("docs/results/index.html")[
   #bench-document("Explore benchmarks", "Search benchmark cases, captures and source evidence.",
-    assets: "../../assets/", home: "../../index.html", scripts: ("explorer.js",), styles: ("explorer.css",),
-  )[#explorer(explorer-catalog, root: "../../")]
+    assets: "../../assets/", home: if preview == none { "../../index.html" } else { "../../explore.html" }, scripts: ("explorer.js",), styles: ("explorer.css",),
+  )[#preview-notice("../../") #explorer(explorer-catalog, root: "../../")]
 ]
 #for entry in entries {
   document("benchmarks/" + entry.benchmark.id + "/index.html")[
     #bench-document(entry.benchmark.title, entry.benchmark.description,
-      assets: "../../assets/", home: "../../index.html", interactive: true, scripts: ("workspace.js",),
+      assets: "../../assets/", home: if preview == none { "../../index.html" } else { "../../explore.html" }, interactive: true, scripts: ("workspace.js",),
     )[#workspace(entry: entry, root: "../../", assets: "../../assets/")]
   ]
 }

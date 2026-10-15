@@ -80,9 +80,11 @@
       if (summary) {
         const count = active.reduce((total, group) => total + group.querySelectorAll('.history-point').length, 0);
         const retained = active.reduce((total, group) => total + group.querySelectorAll('.history-unplotted').length, 0);
+        const proposed = active.reduce((total, group) => total + group.querySelectorAll('.history-point[data-history-role="proposed"]').length, 0);
         const selectedCount = multiWorkload ? new Set(active.map(group => group.dataset.case)).size : active.length;
         summary.textContent = active.length
           ? `${selectedCount} ${multiWorkload ? 'workload' : 'implementation/configuration'}${selectedCount === 1 ? '' : 's'} · ${count} qualified commit point${count === 1 ? '' : 's'}.` +
+            (proposed ? ` ${proposed} proposed PR point${proposed === 1 ? '' : 's'}.` : '') +
             (retained ? ` ${retained} unplotted capture${retained === 1 ? '' : 's'} retained below.` : '')
           : 'No captured configuration for this selection. Availability and evidence remain visible.';
       }
@@ -344,8 +346,9 @@
       for (const [configuration, group] of selectedGroups.entries()) {
         const color = `var(--history-series-${wayPositions.get(wayIdentity(group)) % 12})`;
         const records = [...group.querySelectorAll('.history-point, .history-unplotted')];
+        const recorded = records.filter(record => record.dataset.historyRole !== 'proposed');
         const captureCounts = new Map();
-        for (const record of records) captureCounts.set(record.dataset.captureIndex, (captureCounts.get(record.dataset.captureIndex) || 0) + 1);
+        for (const record of recorded) captureCounts.set(record.dataset.captureIndex, (captureCounts.get(record.dataset.captureIndex) || 0) + 1);
         let segment = [], previousCapture, previousTime;
         const flush = () => {
           if (segment.length > 1) svg.append(node('polyline', {points: segment.map(point => `${x(point)},${y(Number(point.dataset.median))}`).join(' '),
@@ -354,13 +357,24 @@
         };
         for (const record of records) {
           const capture = Number(record.dataset.captureIndex), time = capturedTime(record);
-          if (!points.includes(record)) { flush(); previousCapture = capture; previousTime = time; continue; }
-          const ambiguousCapture = captureCounts.get(record.dataset.captureIndex) > 1;
-          if (ambiguousCapture || previousCapture !== undefined && (capture > previousCapture + 1 || time <= previousTime)) flush();
-          if (!ambiguousCapture) segment.push(record);
-          previousCapture = capture; previousTime = time;
+          const proposed = record.dataset.historyRole === 'proposed';
+          if (!points.includes(record)) {
+            if (!proposed) { flush(); previousCapture = capture; previousTime = time; }
+            continue;
+          }
+          if (!proposed) {
+            const ambiguousCapture = captureCounts.get(record.dataset.captureIndex) > 1;
+            if (ambiguousCapture || previousCapture !== undefined && (capture > previousCapture + 1 || time <= previousTime)) flush();
+            if (!ambiguousCapture) segment.push(record);
+            previousCapture = capture; previousTime = time;
+          } else {
+            const base = recorded.filter(row => points.includes(row) && row.dataset.commit === record.dataset.baselineCommit && capturedTime(row) <= time).at(-1);
+            if (base) svg.append(node('line', {x1: x(base), y1: y(Number(base.dataset.median)), x2: x(record), y2: y(Number(record.dataset.median)),
+              class: 'history-proposed-trend', 'data-base-commit': base.dataset.commit, 'data-proposed-commit': record.dataset.commit,
+              style: '--history-series-color:' + color}));
+          }
           const data = record.dataset, center = x(record), medianY = y(Number(data.median));
-          const label = `${group.dataset.case}; ${group.dataset.label}; ${data.commit}; captured ${data.createdAt}; median ${format(Number(data.median))}, observed range ${format(Number(data.min))} to ${format(Number(data.max))}, ${data.count} samples`;
+          const label = `${proposed ? 'Proposed PR #' + data.pr + '; ' : ''}${group.dataset.case}; ${group.dataset.label}; ${data.commit}; captured ${data.createdAt}; median ${format(Number(data.median))}, observed range ${format(Number(data.min))} to ${format(Number(data.max))}, ${data.count} samples`;
           const matching = [...document.querySelectorAll('.matrix-view')].filter(view => view.dataset.independent !== 'true' &&
             ['study', 'case', 'metric', 'unit', 'scope', 'direction', 'contract'].every(key => key === 'case' || view.dataset[key] === group.dataset[key]) &&
             [...view.querySelectorAll('thead th[data-snapshot]')].some(header => header.dataset.snapshot === data.snapshot));
@@ -369,7 +383,8 @@
           const comparisonLink = data.comparisonHref ? new URL(data.comparisonHref, location.href) : null;
           const canNavigate = comparisonLink?.origin === location.origin;
           const mark = node('g', {class: 'history-mark', tabindex: '0', role: canCompare || canNavigate ? 'button' : 'img',
-            'aria-label': (canCompare || canNavigate ? 'Open recorded comparison: ' : '') + label, 'data-source-series': data.sourceSeries});
+            'aria-label': (canCompare || canNavigate ? 'Open recorded comparison: ' : '') + label, 'data-source-series': data.sourceSeries,
+            'data-history-role': proposed ? 'proposed' : 'main'});
           if (canCompare || canNavigate) {
             const open = () => {
               if (!canCompare) {
@@ -386,7 +401,13 @@
           }
           mark.append(node('title', {}, label), node('line', {x1: center, x2: center, y1: y(Number(data.min)), y2: y(Number(data.max)), class: 'history-range', style: '--history-series-color:' + color}),
             node('circle', {cx: center, cy: medianY, r: 22, fill: 'transparent', class: 'history-hit'}));
-          if (wayPositions.get(wayIdentity(group)) % 3 === 1) mark.append(node('rect', {x: center - 4, y: medianY - 4, width: 8, height: 8, fill: color}));
+          if (proposed) {
+            mark.append(node('path', {d: `M ${center} ${medianY - 7} l 7 7 l -7 7 l -7 -7 Z`, class: 'history-proposed-point', style: '--history-series-color:' + color}));
+            const nearRight = center > width - right - 85;
+            mark.append(node('text', {x: center + (nearRight ? -11 : 11), y: medianY - 10,
+              'text-anchor': nearRight ? 'end' : 'start', class: 'history-proposed-label'}, 'PR #' + data.pr));
+          }
+          else if (wayPositions.get(wayIdentity(group)) % 3 === 1) mark.append(node('rect', {x: center - 4, y: medianY - 4, width: 8, height: 8, fill: color}));
           else if (wayPositions.get(wayIdentity(group)) % 3 === 2) mark.append(node('path', {d: `M ${center} ${medianY - 5} l 5 9 h -10 Z`, fill: color}));
           else mark.append(node('circle', {cx: center, cy: medianY, r: 4, fill: color}));
           svg.append(mark);

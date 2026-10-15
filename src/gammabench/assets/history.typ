@@ -156,8 +156,13 @@
   let item = record.item
   let source = record.source
   let attrs = ("data-source-series": item.id, "data-snapshot": item.snapshot_id, "data-task": item.task,
-    "data-capture-index": str(record.capture_index), "data-created-at": record.snapshot.created_at,
+    "data-capture-index": json.encode(record.capture_index), "data-created-at": record.snapshot.created_at,
     "data-version-label": source.implementation.version_label)
+  attrs.insert("data-history-role", if record.proposal == none { "main" } else { "proposed" })
+  if record.proposal != none {
+    attrs.insert("data-pr", str(record.proposal.pr))
+    attrs.insert("data-baseline-commit", record.proposal.baseline)
+  }
   let comparison = comparisons.at(item.snapshot_id, default: none)
   if comparison != none { attrs.insert("data-comparison-href", comparison) }
   let class = "history-unplotted"
@@ -177,6 +182,7 @@
         else { source.revision.slice(0, 10) }
       } else { source.implementation.version_label }
       #el("span", class: "history-variant", item.variant)
+      #if record.proposal != none { el("strong", class: "history-proposal-label", "Proposed PR #" + str(record.proposal.pr)) }
       #let declared-status = matrix-implementation-status(item)
       #if declared-status != "" { el("span", class: "implementation-status", "Declared status: " + declared-status) }
       #el("span", class: "history-capture-date", if record.snapshot.created_at == "" { "Capture date unavailable" } else { record.snapshot.created_at })
@@ -192,7 +198,7 @@
   ])
 }
 
-#let benchmark-history(analyses, subjects: (:), reports: (:), comparisons: (:), capture-modes: (:), initial-study: none, initial-case: none, initial-metric: none, multi-workload: false) = {
+#let benchmark-history(analyses, subjects: (:), reports: (:), comparisons: (:), proposals: (:), capture-modes: (:), initial-study: none, initial-case: none, initial-metric: none, multi-workload: false) = {
   let groups = (:)
   let availability = ()
   let cases = ()
@@ -211,10 +217,14 @@
     }
     for snapshot in snapshots {
       if not capture-indices.keys().contains(snapshot.id) {
-        let key = history-canonical((study, snapshot.suite_id))
-        let index = capture-suites.at(key, default: 0)
-        capture-indices.insert(snapshot.id, index)
-        capture-suites.insert(key, index + 1)
+        if proposals.keys().contains(snapshot.id) {
+          capture-indices.insert(snapshot.id, -1)
+        } else {
+          let key = history-canonical((study, snapshot.suite_id))
+          let index = capture-suites.at(key, default: 0)
+          capture-indices.insert(snapshot.id, index)
+          capture-suites.insert(key, index + 1)
+        }
       }
     }
     let series = snapshots.map(snapshot => analysis.series.filter(item => item.snapshot_id == snapshot.id
@@ -235,7 +245,8 @@
       if item.validation_status != "passed" {
         reason = "Qualification " + item.validation_status + ". " + item.validation_reason
       }
-      group.records.push((item: item, snapshot: snapshot, source: source, qualified: qualified, reason: reason, order: order, capture_index: capture-indices.at(item.snapshot_id)))
+      group.records.push((item: item, snapshot: snapshot, source: source, qualified: qualified, reason: reason,
+        proposal: proposals.at(snapshot.id, default: none), order: order, capture_index: capture-indices.at(item.snapshot_id)))
       groups.insert(key, group)
       order += 1
       if not cases.contains((study, item.case)) { cases.push((study, item.case)) }
@@ -293,6 +304,9 @@
     ).join())
     #if has-ci {
       el("p", class: "history-reading-guide")[CI history follows each run's candidate discovery measurement. Paired baselines and confirmation measurements remain in Compare and Evidence.]
+    }
+    #if proposals.len() > 0 {
+      el("p", class: "history-reading-guide")[Hollow diamonds marked PR are proposed measurements. Dashed connectors lead from the recorded base commit when its measurement context matches. Main history keeps its own line; all points use their actual capture dates.]
     }
     #if multi-workload {
       el("p", class: "history-reading-guide")[Select workloads below to show their evolution together. The selected metric, units and measurement scope are shared; each workload keeps its own line and captured range.]

@@ -193,6 +193,13 @@ selected workloads using one metric, unit and scope. Workload checkboxes and
 the selected measurement are retained in the URL; clicking a point opens its
 original paired comparison.
 
+PR previews open History by default and include the published main history.
+The PR candidate appears as a hollow diamond labeled **Proposed PR #N**; a
+dashed connector links it to its recorded base when measurement contexts match.
+Main's trend and the original capture dates remain intact. **Run summary** and
+**All runs for this PR** retain access to gate outcomes and older captures.
+Preview points do not enter main's catalog; merging triggers a fresh main run.
+
 Compare groups workloads against tools, ways and measured versions. Select an
 original recorded comparison set and exact reference. Cells use the stored paired
 relative result, with the multiplier prominent and the captured median underneath.
