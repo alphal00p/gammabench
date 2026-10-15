@@ -53,6 +53,13 @@ def _parser() -> argparse.ArgumentParser:
     variants.add_argument("destination", type=Path)
     variants.add_argument("--variant", action="append", required=True, metavar="LABEL=PACKAGE")
     variants.add_argument("--task", action="append", dest="selected_tasks", help="original task ID, shared by all packages")
+    scaffold = subcommands.add_parser("new-benchmark", help="scaffold a registered Rust benchmark and Nix package")
+    scaffold.add_argument("benchmark_id")
+    scaffold.add_argument("--family", required=True)
+    scaffold.add_argument("--title")
+    scaffold.add_argument("--description")
+    scaffold.add_argument("--family-title")
+    scaffold.add_argument("--repo", type=Path, default=Path.cwd())
     integrity = subcommands.add_parser("verify", help="verify every file in a relocated snapshot")
     integrity.add_argument("snapshot", type=Path)
     for command in ("report", "compare"):
@@ -60,6 +67,9 @@ def _parser() -> argparse.ArgumentParser:
         report.add_argument("snapshots", nargs="+", type=Path)
         report.add_argument("--baseline", help="snapshot ID, variant label, or engine:NAME")
         report.add_argument("--output", type=Path, required=command == "report")
+        if command == "report":
+            report.add_argument("--register", metavar="BENCHMARK", help="retain evidence and register the report in the benchmark catalog")
+            report.add_argument("--repo", type=Path, help="gammabench checkout for report registration")
     sources = subcommands.add_parser("sources", help="resolve selected exact source and tool pins")
     sources.add_argument("lockfile", type=Path)
     sources.add_argument("--tool", action="append", dest="selected_tools")
@@ -93,14 +103,26 @@ def main(argv: list[str] | None = None) -> int:
             path = assemble(arguments.destination, _assignments(arguments.variant),
                             selected_tasks=arguments.selected_tasks)
             print(json.dumps({"suite": str(path / "suite.json"), "status": "assembled"}))
+        elif arguments.command == "new-benchmark":
+            from .scaffold import create
+            print(json.dumps(create(arguments.repo, arguments.benchmark_id, family=arguments.family,
+                                    title=arguments.title, description=arguments.description,
+                                    family_title=arguments.family_title)))
         elif arguments.command == "verify":
             inventory = verify(arguments.snapshot)
             snapshot = load(arguments.snapshot)
             print(json.dumps({"snapshot_id": snapshot["id"], "status": "verified", "files": len(inventory)}))
         elif arguments.command == "report":
-            from .report import render
-            render(arguments.snapshots, arguments.output, baseline=arguments.baseline)
-            print(json.dumps({"output": str(arguments.output), "status": "rendered"}))
+            if arguments.register:
+                from .registry import register_report
+                print(json.dumps(register_report(arguments.snapshots, arguments.output, arguments.register,
+                                                 root=arguments.repo, baseline=arguments.baseline)))
+            else:
+                if arguments.repo is not None:
+                    raise ValueError("--repo requires --register")
+                from .report import render
+                render(arguments.snapshots, arguments.output, baseline=arguments.baseline)
+                print(json.dumps({"output": str(arguments.output), "status": "rendered"}))
         elif arguments.command == "compare":
             from .report import analyze
             output = None

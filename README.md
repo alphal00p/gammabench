@@ -60,6 +60,29 @@ it is not a physics performance claim. Without installing the package, use
 See [the protocol](docs/protocol.md), [the suite format](docs/suites.md), and
 [the generation suite](suites/generation/README.md).
 
+## Create and register a benchmark
+
+```sh
+nix run .#gammabench -- new-benchmark my-operation --family tensor-contraction
+jj status  # Git checkouts: add the generated suite, recipe and catalog before Nix builds.
+nix run .#my-operation -- results/my-operation --repeats 15 --warmups 1
+nix run .#gammabench -- report results/my-operation \
+  --output docs/results/my-operation --register my-operation
+```
+
+The command creates a native Rust starter, inputs, suite JSON, Nix recipe and
+instructions. Its catalog entry supplies the Nix package/app automatically and
+appears on the site as planned. Replace the starter operation, timing contract
+and exact checks with the intended benchmark. Report registration retains sealed
+evidence under `snapshots/measured/`, renders the report and appends its catalog
+paths. Existing files and captures are never overwritten.
+
+Nix source receipts supply commit-history points, including composed revision
+comparisons. Histories join only compatible build, workload, correctness and
+explicit runtime contexts. A starter has no invented Git source; wire its measured
+source and subject mapping into the recipe when benchmarking an upstream library.
+See [the complete workflow](docs/nix.md).
+
 ## Pin and acquire tools
 
 `tools.lock.json` records the tool revisions used by the preserved generation
@@ -165,16 +188,17 @@ captures to the same entry when the benchmark definition remains compatible.
 Keep a new definition under a new benchmark ID when its meaning changes. The
 first registered snapshot anchors the display identity, so retain capture order.
 
-`subjects` maps engine IDs to measured tool bindings and optional source-repository
-links. Normal captures with different task IDs are conservatively separate unless
-`capture_modes` explicitly maps each task ID to the same capture mode (for example,
-`"timing"`). Use different modes for instrumented and native execution. Historical
-explicit profile provenance takes priority. Unknown modes remain separate; do not
-declare equivalence just to obtain a line. Normal analysis metadata does not yet
-expose complete task environment/build settings, so its points remain separate by
-snapshot and task even when a mode is declared. Historical lines require the
-retained controller identity as well as matching context. These are presentation declarations;
-original source pins and measurement definitions still come from each snapshot.
+Nix captures use their retained source-to-engine subject mapping, including the
+original receipts inside a composed revision comparison. The plotted commit is
+the measured source revision. Changing adapter binaries remain evidence; fixed
+helpers, inputs, compiler/profile, metric/contract, validation witness, controller,
+hardware and declared runtime settings define separate configurations. Missing
+pins, dirty sources and archive-only revisions retain explicit unplotted evidence.
+
+For older captures, `subjects` maps engine IDs to measured tool bindings and
+optional repository links. Historical profile provenance takes priority over a
+`capture_modes` declaration. Captures without adequate configuration metadata
+remain separate. Neither the browser nor Typst invents cross-capture pairing.
 
 Report content, controls and evidence are authored in
 `src/gammabench/assets/report.typ`, `matrix.typ` and `history.typ`, with a shared

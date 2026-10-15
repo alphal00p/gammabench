@@ -17,6 +17,13 @@
 }
 #let history-commit(value) = type(value) == str and value.match(regex("^[0-9a-fA-F]{40}$")) != none
 #let history-source(item, snapshot, subjects, capture-modes) = {
+  let retained = item.at("history", default: none)
+  if type(retained) == dictionary and retained.at("kind", default: "") == "nix-build" {
+    return (revision: retained.revision, capture: retained.capture,
+      binding: retained.evidence.at("source", default: (:)),
+      dependencies: retained.at("context").at("fixed_sources", default: (:)),
+      reason: retained.reason, repository: retained.repository, task: item.task, capture_task: "")
+  }
   let subject = subjects.at(item.engine, default: (:))
   let task = item.task
   let declared-mode = capture-modes.at(snapshot.id, default: (:)).at(item.task, default: none)
@@ -96,6 +103,13 @@
   valid
 }
 #let history-context(study, item, snapshot, source) = {
+  let retained = item.at("history", default: none)
+  if type(retained) == dictionary and retained.at("kind", default: "") == "nix-build" {
+    return history-canonical((study: study, case: item.case, engine: item.engine,
+      metric: item.metric, unit: item.unit, scope: item.scope, direction: item.direction,
+      contract: snapshot.contracts.at(item.contract, default: none), workload: item.workload,
+      capture: source.capture, receipt_context: retained.at("context")))
+  }
   let workload = item.at("workload", default: none)
   let contract = snapshot.contracts.at(item.contract, default: none)
   let controller = snapshot.provenance.at("legacy_controller_sha256", default: none)
@@ -145,8 +159,7 @@
     #el("td", if record.qualified { "Qualified · complete" } else { record.reason })
     #el("td", [
       #let href = reports.at(item.snapshot_id, default: none)
-      #if href != none { el("a", attrs: (href: href), item.snapshot_id + " · " + item.task) }
-      else { item.snapshot_id + " · " + item.task; el("span", [ · Report link unavailable]) }
+      #if href != none { el("a", attrs: (href: href), item.snapshot_id + " · " + item.task) } else { item.snapshot_id + " · " + item.task; el("span", [ · Report link unavailable]) }
     ])
   ])
 }
@@ -257,6 +270,13 @@
           ]))
           #el("p", [*Contract definition:*])
           #el("pre", json.encode(group.snapshot.contracts.at(group.contract, default: (:)), pretty: true))
+          #if group.records.any(record => record.item.at("history", default: none) != none) {
+            el("p", [*Nix build and measured runtime evidence:*])
+            for record in group.records {
+              let retained = record.item.at("history", default: none)
+              if retained != none { el("pre", json.encode(retained, pretty: true)) }
+            }
+          }
           #el("p", [*Workload inputs and fixed dependencies:*])
           #el("pre", json.encode((workload: group.workload, dependencies: group.dependencies), pretty: true))
           #let href = reports.at(group.snapshot.id, default: none)
@@ -277,8 +297,7 @@
           #item.at("engine", default: "") · #item.at("case", default: "") · #item.status:
           #item.at("reason", default: "No successful captured result")
           #let href = reports.at(item.snapshot_id, default: none)
-          #if href != none { el("a", attrs: (href: href + "#availability"), [Retained record]) }
-          else { [ · Report link unavailable] }
+          #if href != none { el("a", attrs: (href: href + "#availability"), [Retained record]) } else { [ · Report link unavailable] }
         ])
       }
     ])

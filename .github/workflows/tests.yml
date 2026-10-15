@@ -42,6 +42,15 @@ jobs:
           env PYTHONHOME=/gammabench-invalid-python-home PYTHONPATH=/gammabench-invalid-python-path \
             nix run .#rust-sort -- results/nix-sort-demo --repeats 3 --warmups 1
           gammabench verify results/nix-sort-demo
+      - name: Scaffold, run and register a benchmark
+        if: matrix.python == '3.13'
+        run: |
+          gammabench new-benchmark ci-scaffold --family examples
+          git add suites/ci-scaffold nix/ci-scaffold.nix web/benchmarks.json
+          nix build .#checks.x86_64-linux.registered-ci-scaffold-definition --no-link
+          nix run .#ci-scaffold -- results/ci-scaffold --repeats 2 --warmups 1
+          gammabench report results/ci-scaffold --output docs/results/ci-scaffold --register ci-scaffold
+          bash scripts/build-pages.sh .gammabench/scaffold-pages
       - name: Verify historical snapshots
         run: |
           for snapshot in snapshots/historical/*; do

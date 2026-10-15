@@ -80,9 +80,9 @@ Each snapshot retains a checksummed Nix build receipt with actual source pins,
 NAR hashes, toolchain/profile identities, executable paths and digests. The source
 trees need no `.git` metadata at runtime. The original receipt is copied into the
 sealed snapshot so it survives moving the results or garbage-collecting the
-local Nix store. These receipts are retained evidence; the current website
-history renderer does not yet consume their source-subject mappings to join new
-captures into commit-history lines. Store paths identify built outputs; retaining
+local Nix store. Commit-history plots consume these receipts, resolving each
+engine through `subjects` to its actual source revision. Composed revision runs
+use the original per-variant receipts, preserving their full source identities. Store paths identify built outputs; retaining
 a path is not a promise that its contents are indefinitely available from a binary cache.
 
 For controlled comparisons, build both revisions before measuring, run on the
@@ -120,22 +120,69 @@ this repository or a public binary cache.
 
 ## Add another kind of benchmark
 
-`lib.mkBenchmark` accepts a normal suite definition and its packaged files. The
-suite declares argv, input files, required output, validator and arbitrary
-numeric metrics with units, direction and scope. No graph-generation-specific
-fields are required. A benchmark can provide several tasks, workloads or metrics.
+```sh
+nix run .#gammabench -- new-benchmark my-operation \
+  --family symbolic-algebra --title "My operation"
+```
 
-Supply immutable executable tool paths and dependencies from Nix derivations.
-Declare source identities, engine-to-source subjects and a build receipt's
-comparison context separately. The context should include fixed dependencies,
-harness/validator hashes, compiler, target, features and optimisation profile.
-Keep full executable/store identities as evidence even when comparing a changing
-subject revision. Never drop a changed dependency just to join a history line.
+Use `--repo PATH` from another working directory. Existing families are reused;
+`--family-title` can name a newly created family. The command creates:
 
-Build-only checks may compile the harness and validate its definition. Performance
-measurements stay in the generated runtime app. The integer-sum package in
-`nix/default.nix` demonstrates the generic definition; `nix/generation.nix` is one
-benchmark family's implementation.
+- `suites/my-operation/main.rs`: native Rust starter with input setup, a timed
+  vector operation, retained result and exact elementwise checks outside the clock.
+- `suite.json`, `workload.txt` and a README in that directory.
+- `nix/my-operation.nix`: pinned compilation and `mkBenchmark` packaging.
+- A planned entry in `web/benchmarks.json`, shared by Nix and the website.
+
+The starter is a runnable example. Replace its operation, contracts, expected
+outputs and fixtures with the intended measurement. Every task must emit each
+internal metric declared by its suite. Use separate suites when operations need
+different metric schemas. The common runner remains independent of benchmark
+semantics.
+
+Track new files before Nix's Git-backed flake reads them: run `jj status` in a jj
+checkout, or add the generated files with Git. Then:
+
+```sh
+nix run .#my-operation -- results/my-operation-run --repeats 15 --warmups 1
+nix run .#gammabench -- report results/my-operation-run \
+  --output docs/results/my-operation-run --register my-operation
+```
+
+Report registration verifies and copies external sealed snapshots unchanged into
+`snapshots/measured/`, keeps portable evidence links, renders the report and then
+updates the catalog. Reports must be under `docs/results/`. It rejects duplicate
+capture IDs, changed contract/metric definitions, existing destinations and unsafe
+paths. Failed and censored captures can be registered and remain explicit.
+Scaffolding and report registration share a catalog lock; unsuccessful operations
+roll back their newly created outputs. They do not publish or push the checkout.
+
+A scaffolded benchmark needs no central Nix edits: `nix/registered.nix` loads its
+recipe, exposing the package, app, runner and definition check. Recipes receive
+`pkgs`, `inputs`, `craneLib`, `toolchain`, `mkBenchmark` and `infrastructure`. Add
+real upstream dependencies using these locked inputs; keep dependency resolution
+frozen for source-only revision comparisons.
+
+For source history, declare immutable `sources`, map each engine through
+`subjects`, and retain adapter/harness hashes, compiler, profile and fixed
+dependencies in `comparisonContext`. The generated starter leaves source mappings
+empty rather than inventing a repository commit. The generation recipes provide
+an upstream-library example.
+
+Histories remove only the explicitly mapped changing source from fixed-dependency
+context and allow executables inside the declared compiled adapter output to vary.
+Fixed helper executables and all other inputs retain their identities. A verified
+build-receipt input may change with the source pin; a receipt-like filename alone
+receives no exemption. Workloads, metric scopes, contracts, accepted correctness
+witnesses, controller, hardware, affinity and explicit task/run environment must
+match for points to share a line. Independent captures without retained controller
+identity stay separate. Full source, binary/store and runtime evidence remains
+available under each plotted configuration. No paired ratios are inferred from
+history lines.
+
+The exported `lib.mkBenchmark` remains usable by external flakes. It accepts any
+suite definition, packaged files, source identities and build context; a harness
+can be native Rust or another executable producing the declared metrics.
 
 ## Measurement backend
 

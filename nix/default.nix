@@ -199,10 +199,7 @@ let
       external
       ;
   };
-in
-{
-  inherit mkBenchmark;
-  packages = {
+  builtinPackages = {
     default = example.package;
     inherit gammabench hyperfine;
     integer-sum = example.package;
@@ -212,30 +209,50 @@ in
     inherit (external) qgraf nauty;
   }
   // generation.packages;
-  apps = {
+  builtinApps = {
     default = example.app;
     integer-sum = example.app;
     rust-sort = rustSort.app;
   }
   // generation.apps;
-  checks.package-definition =
-    pkgs.runCommand "gammabench-package-definition" { nativeBuildInputs = [ gammabench ]; }
-      ''
-        gammabench validate ${example.package}/suite.json
-        touch "$out"
-      '';
-  checks.runtime-environment = pkgs.runCommand "gammabench-runtime-environment" { } ''
-    mkdir -p "$TMPDIR/injected/gammabench"
-    echo 'raise RuntimeError("Ambient PYTHONPATH replaced the packaged framework")' > "$TMPDIR/injected/gammabench/__init__.py"
-    export LD_LIBRARY_PATH="$TMPDIR/injected"
-    export DYLD_LIBRARY_PATH="$TMPDIR/injected"
-    export PYTHONHOME="$TMPDIR/no-python-home"
-    export PYTHONPATH="$TMPDIR/injected"
-    ${gammabench}/bin/gammabench --help > framework-help.txt
-    ${gammabench}/bin/gammabench validate ${example.package}/suite.json
-    ${example.runner}/bin/bench-integer-sum --help > app-help.txt
-    touch "$out"
-  '';
+  registered = import ./registered.nix {
+    inherit
+      pkgs
+      inputs
+      craneLib
+      sourceRoot
+      toolchain
+      mkBenchmark
+      infrastructure
+      gammabench
+      ;
+    reservedNames = builtins.attrNames builtinPackages ++ builtins.attrNames builtinApps;
+  };
+in
+{
+  inherit mkBenchmark;
+  packages = builtinPackages // registered.packages;
+  apps = builtinApps // registered.apps;
+  checks = registered.checks // {
+    package-definition =
+      pkgs.runCommand "gammabench-package-definition" { nativeBuildInputs = [ gammabench ]; }
+        ''
+          gammabench validate ${example.package}/suite.json
+          touch "$out"
+        '';
+    runtime-environment = pkgs.runCommand "gammabench-runtime-environment" { } ''
+      mkdir -p "$TMPDIR/injected/gammabench"
+      echo 'raise RuntimeError("Ambient PYTHONPATH replaced the packaged framework")' > "$TMPDIR/injected/gammabench/__init__.py"
+      export LD_LIBRARY_PATH="$TMPDIR/injected"
+      export DYLD_LIBRARY_PATH="$TMPDIR/injected"
+      export PYTHONHOME="$TMPDIR/no-python-home"
+      export PYTHONPATH="$TMPDIR/injected"
+      ${gammabench}/bin/gammabench --help > framework-help.txt
+      ${gammabench}/bin/gammabench validate ${example.package}/suite.json
+      ${example.runner}/bin/bench-integer-sum --help > app-help.txt
+      touch "$out"
+    '';
+  };
   devShells.default = pkgs.mkShell {
     packages = [
       gammabench

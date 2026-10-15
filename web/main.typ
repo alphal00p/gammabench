@@ -15,7 +15,6 @@
 #let entries = registry.benchmarks.map(benchmark => {
   assert(benchmark.id.match(regex("^[a-z0-9][a-z0-9-]*$")) != none, message: "Benchmark ID must be a safe URL segment")
   assert(family-ids.contains(benchmark.family), message: "Unknown benchmark family")
-  assert(benchmark.analyses.len() > 0, message: "A benchmark requires a capture")
   assert(benchmark.analyses.len() == benchmark.reports.len(), message: "Every analysis needs its report")
   let captures = benchmark.analyses.map(path => {
     assert(path.starts-with("docs/results/") and path.ends-with("/analysis.json")
@@ -27,6 +26,9 @@
       message: "Evidence report must accompany its registered analysis")
     assert(path.starts-with("docs/results/") and path.ends-with("/index.html")
       and not path.split("/").contains(".."), message: "Report must be a retained report path")
+  }
+  if captures.len() == 0 {
+    return (benchmark: benchmark, captures: (), study: "planned:" + benchmark.id, analysis: none)
   }
   let snapshots = captures.map(capture => capture.snapshots).flatten()
   let snapshot-ids = snapshots.map(snapshot => snapshot.id)
@@ -47,13 +49,20 @@
 })
 #assert(entries.map(entry => entry.study).dedup().len() == entries.len(), message: "A capture cannot anchor two benchmarks")
 #let default-entry = entries.find(entry => entry.benchmark.id == registry.default_benchmark)
+#let planned-message(entry) = el("div", class: "notice", attrs: ("data-benchmark-planned": entry.benchmark.id))[
+  *No measurements yet.* This benchmark is registered and ready for implementation and capture.
+
+  Run #el("code", "nix run .#" + entry.benchmark.id + " -- snapshots/" + entry.benchmark.id),
+  then register its report with #el("code", "gammabench report SNAPSHOT --output docs/results/CAPTURE --register " + entry.benchmark.id).
+]
 #let workspace(entry: default-entry, root: "", assets: "assets/") = {
-  let analyses = (entry.analysis,)
+  let analyses = if entry.analysis == none { () } else { (entry.analysis,) }
+  let snapshots = if entry.analysis == none { () } else { entry.analysis.snapshots }
   let titles = (:)
   titles.insert(entry.study, entry.benchmark.title)
   let reports = (:)
   let capture-modes = (:)
-  for snapshot in entry.analysis.snapshots {
+  for snapshot in snapshots {
     capture-modes.insert(snapshot.id, entry.benchmark.at("capture_modes", default: (:)))
   }
   for (index, capture) in entry.captures.enumerate() {
@@ -61,6 +70,7 @@
   }
   el("div", class: "workspace", attrs: (
     id: "benchmark-workspace", "data-default-benchmark": entry.benchmark.id,
+    "data-default-study": entry.study,
     "data-default-tab": "history",
   ))[
     #el("aside", class: "workspace-sidebar", attrs: ("aria-label": "Benchmark navigation"))[
@@ -80,7 +90,7 @@
                 "data-definition-version": entry.benchmark.definition_version,
                 "data-default-metric": entry.benchmark.default_metric,
                 "data-href": root + "benchmarks/" + entry.benchmark.id + "/index.html",
-              ), entry.benchmark.title,
+              ), entry.benchmark.title + if entry.analysis == none { " · planned" } else { "" },
             )).join())
           ]
         } else {
@@ -108,16 +118,22 @@
         id: "workspace-history", "data-workspace-panel": "history", role: "tabpanel",
         "aria-labelledby": "workspace-tab-history",
       ))[
-        #benchmark-history(analyses, subjects: registry.subjects, reports: reports,
-          capture-modes: capture-modes, initial-study: entry.study,
-          initial-case: entry.benchmark.at("default_case", default: none),
-          initial-metric: entry.benchmark.default_metric)
+        #if entry.analysis == none {
+          planned-message(entry)
+        } else {
+          benchmark-history(analyses, subjects: registry.subjects, reports: reports,
+            capture-modes: capture-modes, initial-study: entry.study,
+            initial-case: entry.benchmark.at("default_case", default: none),
+            initial-metric: entry.benchmark.default_metric)
+        }
       ]
       #el("section", class: "workspace-panel", attrs: (
         id: "workspace-compare", "data-workspace-panel": "compare", role: "tabpanel", hidden: "",
         "aria-labelledby": "workspace-tab-compare",
       ))[
-        #comparison-matrix(analyses, titles: titles, initial-study: entry.study, show-study: false)
+        #if entry.analysis == none { planned-message(entry) } else {
+          comparison-matrix(analyses, titles: titles, initial-study: entry.study, show-study: false)
+        }
       ]
       #el("section", class: "workspace-panel", attrs: (
         id: "workspace-evidence", "data-workspace-panel": "evidence", role: "tabpanel", hidden: "",
@@ -128,7 +144,16 @@
         ))[
           == #entry.benchmark.title
 
-          Definition version: #entry.benchmark.definition_version. Captures retain their original versions, qualification and measurement boundaries.
+          Definition version: #entry.benchmark.definition_version.
+
+          #if entry.analysis == none {
+            planned-message(entry)
+            for (field, title) in (("suite", "Suite definition"), ("nix_recipe", "Nix package")) {
+              if entry.benchmark.keys().contains(field) {
+                el("p", link("https://github.com/alphal00p/gammabench/blob/main/" + entry.benchmark.at(field), title))
+              }
+            }
+          } else { [Captures retain their original versions, qualification and measurement boundaries.] }
 
           #el("ul", entry.benchmark.reports.map(path => el("li", link(root + path)[Complete report and raw evidence])).join())
           #el("ul", entry.benchmark.analyses.map(path => el("li", [
@@ -137,7 +162,7 @@
             #link(root + path.replace("analysis.json", "comparisons.csv"))[Comparisons CSV] ·
             #link(root + path.replace("analysis.json", "availability.csv"))[Unavailable / failed CSV]
           ])).join())
-          #for snapshot in entry.analysis.snapshots {
+          #for snapshot in snapshots {
             el("details")[
               #el("summary", snapshot.id + " · " + snapshot.origin)
               #el("p")[#link(reports.at(snapshot.id))[Source report with sealed snapshot and checksums]]

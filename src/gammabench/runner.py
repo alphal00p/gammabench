@@ -20,6 +20,7 @@ import uuid
 
 from . import __version__, hyperfine as hyperfine_backend
 from .nix import capture_receipt, load_receipt, verify_receipt
+from .history_context import controller_source_sha256
 from .schema import SchemaError, dotted, validate_suite
 from .snapshot import seal, sha256, staging_directory, write_json
 
@@ -300,7 +301,8 @@ def run(suite_path: str | Path, destination: str | Path, *, repeats: int = 15, w
                 "method": "alternating reversed cyclic rotations", "fresh_process_per_sample": True},
                 "records": [], "validation": {"status": "unqualified", "tasks": {}, "equivalence": []},
                 "provenance": {"suite_original_sha256": sha256(suite_path), "explicit_environment": environment,
-                "gammabench_version": __version__, "clock": "time.perf_counter_ns",
+                "gammabench_version": __version__, "controller_source_sha256": controller_source_sha256(),
+                "clock": "time.perf_counter_ns",
                 "process_wall_includes": "spawn, complete child lifetime and process wait",
                 "measurement_backend": measurement_tool or {"name": "python", "clock": "time.perf_counter_ns"},
                 "timeout_seconds": timeout}}

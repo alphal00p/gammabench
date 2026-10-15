@@ -9,7 +9,7 @@
     const panels = [...workspace.querySelectorAll('[data-workspace-panel]')];
     const groups = [...workspace.querySelectorAll('.history-series[data-series-id]')];
     const historyRoot = byId('benchmark-history');
-    const localStudies = new Set([historyRoot?.dataset.defaultStudy,
+    const localStudies = new Set([workspace.dataset.defaultStudy, historyRoot?.dataset.defaultStudy,
       byId('comparison-matrix')?.dataset.defaultStudy, ...groups.map(group => group.dataset.study)]);
     const controls = Object.fromEntries(['case', 'metric', 'series'].map(key => [key, byId('history-' + key)]));
     const templates = Object.fromEntries(Object.entries(controls).map(([key, control]) =>

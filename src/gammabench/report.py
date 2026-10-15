@@ -17,6 +17,7 @@ from urllib.parse import quote
 
 from . import __version__
 from .snapshot import load
+from .history_context import project_history
 
 
 def _canonical(value: Any) -> str:
@@ -160,7 +161,7 @@ def _series(snapshot: dict[str, Any], tasks: list[dict[str, Any]]) -> list[dict[
                     samples.append({"repeat": record.get("repeat"), "value": value})
                 elif record.get("status") == "completed":
                     missing += 1
-            result.append({
+            item = {
                 "id": f"{snapshot['id']}:{task}:{metric}",
                 "snapshot_id": snapshot["id"],
                 "suite_id": snapshot["suite_id"],
@@ -183,7 +184,13 @@ def _series(snapshot: dict[str, Any], tasks: list[dict[str, Any]]) -> list[dict[
                 "missing_values": missing,
                 "samples": samples,
                 **_stats([sample["value"] for sample in samples]),
-            })
+            }
+            if isinstance(snapshot.get("provenance", {}).get("nix_build"), dict):
+                fields = sorted(_validation(snapshot, task).get("equivalence_fields", []))
+                qualification = {"fields": fields, "value": _semantic_values(snapshot, task, fields)}
+                item["history"] = project_history(snapshot, definitions.get(task, identity), metric, definition,
+                                                  records, workload, qualification)
+            result.append(item)
     return result
 
 

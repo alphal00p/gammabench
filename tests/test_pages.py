@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import subprocess
+import shutil
 import tempfile
 import unittest
 from urllib.parse import unquote, urlsplit
@@ -98,14 +99,44 @@ class PagesTests(unittest.TestCase):
             for path in benchmark['analyses']:
                 own_snapshots.update(snapshot['id'] for snapshot in json.loads((ROOT / path).read_text())['snapshots'])
             displayed_studies = set(re.findall(r'class="history-series"[^>]*data-study="([^"]+)"', html))
-            self.assertTrue(displayed_studies)
-            self.assertTrue(displayed_studies <= own_snapshots)
+            if benchmark['analyses']:
+                self.assertTrue(displayed_studies)
+                self.assertTrue(displayed_studies <= own_snapshots)
+                self.assertTrue('id="comparison-matrix"' in html, benchmark['id'])
+            else:
+                self.assertFalse(displayed_studies)
+                self.assertIn('No measurements yet', html)
+                self.assertNotIn('class="matrix-cell"', html)
             for other in registry['benchmarks']:
                 self.assertIn(f'data-href="../../benchmarks/{other["id"]}/index.html"', html)
         default = registry['default_benchmark']
         for path in ('index.html', 'docs/results/index.html'):
             self.assertIn(f'data-default-benchmark="{default}"', (self.site / path).read_text())
         self.assertIn('Planned', (self.site / 'index.html').read_text())
+
+    def test_scaffolded_benchmark_has_empty_workspace_without_fabricated_measurements(self):
+        from gammabench.scaffold import create
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'checkout'
+            root.mkdir()
+            for name in ('scripts', 'web', 'docs/results', 'snapshots', 'src/gammabench/assets'):
+                shutil.copytree(ROOT / name, root / name)
+            (root / 'nix').mkdir()
+            (root / 'flake.nix').write_text('{}')
+            shutil.copyfile(ROOT / 'artifacts.json', root / 'artifacts.json')
+            create(root, 'planned-operation', family='tensor-contraction')
+            destination = Path(temporary) / 'site'
+            subprocess.run(['bash', str(root / 'scripts/build-pages.sh'), str(destination)],
+                           check=True, capture_output=True)
+            page = (destination / 'benchmarks/planned-operation/index.html').read_text()
+            self.assertIn('No measurements yet', page)
+            self.assertIn('data-default-study="planned:planned-operation"', page)
+            self.assertNotIn('class="history-point"', page)
+            self.assertNotIn('class="matrix-cell"', page)
+            for tab in ('history', 'compare', 'evidence'):
+                self.assertIn(f'data-workspace-panel="{tab}"', page)
+            self.assertTrue('Planned operation · planned' in (destination / 'index.html').read_text(), 'planned benchmark appears in the sidebar')
+            self.assertIn('data-default-benchmark="full-diagrams"', (destination / 'index.html').read_text())
 
     def test_existing_destination_and_source_destinations_are_protected(self):
         old = (self.site / 'index.html').read_bytes()

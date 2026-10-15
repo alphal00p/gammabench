@@ -10,6 +10,7 @@ import unittest
 
 from gammabench.report import analyze
 import test_report as report_fixtures
+from test_history_context import nix_capture
 
 
 class HistoryElements(HTMLParser):
@@ -63,7 +64,10 @@ class HistoryViewTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(data.read_text(), before)
         self.assertEqual(json.dumps(analysis, sort_keys=True), before)
-        return output.read_text(), HistoryElements(output.read_text())
+        rendered = output.read_text()
+        self.assertNotIn('else { item.snapshot_id', rendered)
+        self.assertNotIn('else { [ · Report link unavailable]', rendered)
+        return rendered, HistoryElements(rendered)
 
     def simple_analysis(self):
         analysis = analyze(self.fixture.snapshot())
@@ -228,6 +232,43 @@ class HistoryViewTests(unittest.TestCase):
         self.assertIn("&lt;script", page)
         self.assertNotIn('<script>alert("unsafe")</script>', page)
         self.assertIn("&lt;img", page)
+
+    def test_nix_variants_plot_actual_subject_commits_with_full_build_evidence(self):
+        analysis = analyze(nix_capture(self.fixture, paired=True))
+        analysis["series"] = [item for item in analysis["series"] if item["metric"] == "completion_ns"]
+        page, document = self.compile(analysis)
+        self.assertEqual(len(document.groups), 1)
+        self.assertEqual([point["data-commit"] for point in document.points], ["a" * 40, "b" * 40])
+        self.assertEqual([point["data-median"] for point in document.points], ["20", "10"])
+        self.assertEqual({point["data-repository"] for point in document.points},
+                         {"https://github.com/alphal00p/gammaloop"})
+        self.assertIn("Nix build and measured runtime evidence", page)
+        self.assertIn("/nix/store/" + "a" * 40 + "-driver/bin/driver", page)
+        self.assertIn("RAYON_NUM_THREADS", page)
+
+    def test_nix_failed_censored_dirty_archive_and_incomplete_context_stay_as_evidence(self):
+        for scenario in ("unqualified", "timeout", "dirty", "archive", "missing-context"):
+            with self.subTest(capture=scenario):
+                def change(snapshot, suite):
+                    if scenario == "dirty":
+                        snapshot["provenance"]["nix_build"]["sources"]["engine"]["dirty"] = True
+                    elif scenario == "archive":
+                        snapshot["provenance"]["nix_build"]["sources"]["engine"].update(kind="archive", revision="v1")
+                    elif scenario == "missing-context":
+                        snapshot["provenance"]["nix_build"]["comparison_context"] = {}
+                    elif scenario == "unqualified":
+                        snapshot["validation"]["tasks"]["baseline-task"]["status"] = "unqualified"
+                    else:
+                        record = next(record for record in snapshot["records"]
+                                      if record["task"] == "baseline-task" and record["phase"] == "measure")
+                        record.update(status="timeout", metrics={})
+                analysis = analyze(nix_capture(self.fixture, change=change))
+                analysis["series"] = [item for item in analysis["series"]
+                                      if item["task"] == "baseline-task" and item["metric"] == "completion_ns"]
+                page, document = self.compile(analysis)
+                self.assertEqual(len(document.points), 0)
+                self.assertEqual(len(document.unplotted), 1)
+                self.assertNotIn('data-median="0"', page)
 
     def test_preserved_full_diagram_history_uses_actual_parent_and_candidate_pins(self):
         repository = Path(__file__).resolve().parents[1]
