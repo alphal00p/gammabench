@@ -39,8 +39,13 @@ cp "$gammabench_repo_dir/web/explorer.js" "$gammabench_stage/assets/explorer.js"
 cp "$gammabench_repo_dir/src/gammabench/assets/explorer.css" "$gammabench_stage/assets/explorer.css"
 cp "$gammabench_repo_dir/src/gammabench/assets/metadata.json" "$gammabench_stage/assets/metadata.json"
 cp "$gammabench_repo_dir/web/benchmarks.json" "$gammabench_stage/assets/benchmarks.json"
+gammabench_preview_inputs=()
+if [[ -f "$gammabench_repo_dir/web/preview.json" ]]; then
+  gammabench_preview_inputs=(--input preview-context=preview.json)
+fi
 typst compile --root "$gammabench_repo_dir" --features html,bundle --format bundle \
   --creation-timestamp 0 --input "catalog-path=$gammabench_catalog_relative" \
+  "${gammabench_preview_inputs[@]}" \
   "$gammabench_repo_dir/web/main.typ" "$gammabench_stage"
 cp "$gammabench_repo_dir/artifacts.json" "$gammabench_stage/artifacts.json"
 touch "$gammabench_stage/.nojekyll"

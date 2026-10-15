@@ -98,7 +98,7 @@ Path(destination).write_text(json.dumps({"metrics": {"seconds": value},
             "correctness_tolerance": {"relative": 1e-9, "absolute": 0},
         }
 
-    def capture(self, mode="clean"):
+    def capture(self, mode="clean", *, label="test-capture"):
         for task in self.suite["tasks"]:
             task["argv"][-1] = mode
         (self.root / "suite.json").write_text(json.dumps(self.suite))
@@ -108,7 +108,7 @@ Path(destination).write_text(json.dumps({"metrics": {"seconds": value},
             self.root / "public",
             policy_path=self.root / "policy.json",
             private_work_dir=self.root / "private",
-            label="test-capture",
+            label=label,
         )
         return status, self.root / "public"
 

@@ -12,13 +12,14 @@
 
 #let bench-document(
   title, description, body,
-  assets: "", home: "https://alphal00p.github.io/gammabench/", interactive: false, scripts: (), styles: (),
+  assets: "", home: "https://alphal00p.github.io/gammabench/", interactive: false, scripts: (), styles: (), head: [],
 ) = el("html", attrs: (lang: "en"))[
   #el("head")[
     #void("meta", attrs: (charset: "utf-8"))
     #void("meta", attrs: (name: "viewport", content: "width=device-width,initial-scale=1"))
     #void("meta", attrs: (name: "description", content: description))
     #void("meta", attrs: (name: "theme-color", content: "#f9f6f0"))
+    #head
     #el("title")[#title · gammabench]
     #void("link", attrs: (rel: "stylesheet", href: assets + "theme/site.css"))
     #void("link", attrs: (rel: "stylesheet", href: assets + "report.css"))

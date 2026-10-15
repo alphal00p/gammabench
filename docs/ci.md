@@ -72,6 +72,20 @@ checkboxes are saved in the URL. A point links to that workload's original
 comparison set. The overview uses retained values without creating new ratios
 between independent captures or rewriting any sealed evidence.
 
+PR links open this History view by default. Each preview combines the latest
+published main history with only that PR capture. Hollow diamonds and explicit
+**Proposed PR #N** labels distinguish the candidate from main commits, including
+in the evidence table. A dashed connector leads from the measured base commit
+only when its measurement context matches. Main's solid trend remains unchanged;
+all points retain their actual capture dates. Unqualified PR measurements remain
+visible as labeled, unplotted evidence without breaking main's trend.
+
+The stable `previews/pr-N/` URL opens the latest eligible capture. **All runs for
+this PR** lists older captures, and **Run summary** retains the gate outcome,
+commit identities and per-case results. Each archived capture is shown against
+main's currently published history when Pages is rebuilt. Preview catalogs and
+sealed evidence stay separate from main; the combined view is a build artifact.
+
 Each publication commits atomically, retries Git push races against the latest
 branch, rejects conflicting duplicate identities, and accepts identical retries.
 To recover a failed publication, manually dispatch GammaLoop's **Publish
@@ -91,6 +105,6 @@ PYTHONPATH=src python3 -m gammabench.ci assemble-previews \
 ```
 
 Preview sources are data only; rendering uses the trusted framework's Typst
-templates. Each PR has a landing page, permanent per-capture links and a separate
+templates. Each PR has a history landing page, permanent per-capture links and an
 explorer with its comparisons and evidence. CI summaries link to those URLs;
 publication errors are separate from numerical gate outcomes.

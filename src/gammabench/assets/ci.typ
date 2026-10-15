@@ -1,7 +1,11 @@
 #import "components.typ": el, bench-document, hero, section
 #let data = json("ci.json")
 #let outcome(status) = if status == none { "" } else { ("Passed", "Regression or correctness failure", "Inconclusive").at(status) }
-#bench-document(data.title, "Paired CI measurements and retained evidence", assets: data.assets, home: data.home)[
+#bench-document(data.title, "Paired CI measurements and retained evidence", assets: data.assets, home: data.home,
+  head: if data.at("redirect", default: none) != none {
+    el("meta", attrs: ("http-equiv": "refresh", content: "0;url=" + data.redirect), [])
+  } else { [] },
+)[
   #hero(compact: true)[
     = #data.title
     #if data.at("preview", default: false) { el("p", class: "notice")[Premerge measurements · separate from main history] }
@@ -18,6 +22,7 @@
     }
   ]
   #section[
+    #if data.at("redirect", default: none) != none { el("p", link(data.redirect, [Open performance history →])) }
     #for row in data.rows {
       el("article", class: "notice")[
         #if row.href != "" { link(row.href, row.title) } else { row.title }

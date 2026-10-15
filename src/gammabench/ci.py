@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -13,7 +14,7 @@ from importlib import resources
 from pathlib import Path
 
 from .gate import comparator, measurement, phase_pairs, validate_policy
-from .registry import plan_benchmark, register_report
+from .registry import checkout_path, plan_benchmark, register_report, validate_registry
 from .schema import IDENTIFIER, REVISION
 from .snapshot import load, sha256, verify, write_json
 
@@ -321,11 +322,90 @@ def ingest(bundle, root, *, channel, current_head=None, expected=None):
     return {"status": "registered", "path": relative.as_posix()}
 
 
-def assemble_previews(data_root, destination, framework):
+def prepare_preview(source, checkout, main_root):
+    """Compose retained main and PR evidence without changing either archive."""
+    registry = {
+        "schema_version": 1,
+        "families": [],
+        "benchmarks": [],
+        "subjects": {},
+        "default_benchmark": None,
+    }
+    entries = {}
+    proposals = []
+    for root, proposed in ((main_root, False), (source, True)):
+        catalog = validate_registry(
+            json.loads((root / "web/benchmarks.json").read_text())
+        )
+        selected = [
+            entry
+            for entry in catalog["benchmarks"]
+            if entry["family"] == "gammaloop-ci"
+        ]
+        for family in catalog["families"]:
+            if family["id"] == "gammaloop-ci" and not registry["families"]:
+                registry["families"].append(copy.deepcopy(family))
+        for name, subject in catalog.get("subjects", {}).items():
+            if name in registry["subjects"] and registry["subjects"][name] != subject:
+                raise ValueError("Preview subject mapping conflicts with main")
+            registry["subjects"][name] = copy.deepcopy(subject)
+        for entry in selected:
+            definition = json.loads(checkout_path(root, entry["suite"]).read_text())
+            if entry["id"] not in entries:
+                entries[entry["id"]] = copy.deepcopy(entry)
+                entries[entry["id"]].update(analyses=[], reports=[])
+                target = checkout_path(checkout, entry["suite"])
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(checkout_path(root, entry["suite"]), target)
+            retained = entries[entry["id"]]
+            expected = json.loads(
+                checkout_path(checkout, retained["suite"]).read_text()
+            )
+            if entry["definition_version"] != retained["definition_version"] or any(
+                definition[key] != expected[key]
+                for key in ("id", "contracts", "metrics")
+            ):
+                raise ValueError("Preview benchmark definition conflicts with main")
+            for analysis_path, report_path in zip(entry["analyses"], entry["reports"]):
+                origin = checkout_path(root, analysis_path)
+                target = checkout_path(checkout, analysis_path).parent
+                if target.exists():
+                    if inventory(origin.parent) != inventory(target):
+                        raise ValueError("Conflicting retained report in preview")
+                else:
+                    inventory(origin.parent)
+                    shutil.copytree(origin.parent, target)
+                analysis = json.loads(origin.read_text())
+                for snapshot in analysis["snapshots"]:
+                    identifier = snapshot["id"]
+                    if not IDENTIFIER.fullmatch(identifier):
+                        raise ValueError("Unsafe preview snapshot identity")
+                    relative = "snapshots/measured/" + identifier
+                    original = checkout_path(root, relative)
+                    copied = checkout_path(checkout, relative)
+                    hashes = verify(original)
+                    if copied.exists():
+                        if verify(copied) != hashes:
+                            raise ValueError("Conflicting retained snapshot in preview")
+                    else:
+                        shutil.copytree(original, copied)
+                    if proposed and identifier not in proposals:
+                        proposals.append(identifier)
+                if analysis_path not in retained["analyses"]:
+                    retained["analyses"].append(analysis_path)
+                    retained["reports"].append(report_path)
+    registry["benchmarks"] = list(entries.values())
+    registry["default_benchmark"] = next(iter(entries), None)
+    write_json(checkout / "web/benchmarks.json", validate_registry(registry))
+    return registry, proposals
+
+
+def assemble_previews(data_root, destination, framework, *, main_root=None):
     """Render only trusted templates; preview branch files are never executed."""
     data_root, destination, framework = (
         Path(path).resolve() for path in (data_root, destination, framework)
     )
+    main_root = Path(main_root).resolve() if main_root else framework
     inventory(data_root)
     index_path = data_root / "previews/index.json"
     index = (
@@ -357,18 +437,25 @@ def assemble_previews(data_root, destination, framework):
                 checkout.mkdir()
                 for name in ("src", "scripts", "web"):
                     shutil.copytree(framework / name, checkout / name)
-                for name in ("docs", "snapshots", "suites"):
-                    if (source / name).exists():
-                        shutil.copytree(source / name, checkout / name)
-                shutil.copyfile(
-                    source / "web/benchmarks.json", checkout / "web/benchmarks.json"
-                )
+                (checkout / "docs/results").mkdir(parents=True)
+                (checkout / "snapshots").mkdir()
+                registry, proposals = prepare_preview(source, checkout, main_root)
                 shutil.copyfile(
                     framework / "artifacts.json", checkout / "artifacts.json"
                 )
                 (checkout / "flake.nix").write_text("{}\n")
                 target = destination / relative
-                registry = json.loads((checkout / "web/benchmarks.json").read_text())
+                data = json.loads((source / "run.json").read_text())
+                preview = {
+                    "ci": data["ci"],
+                    "status": data["status"],
+                    "snapshots": proposals,
+                    "missing_cases": [
+                        row["title"] for row in data["rows"] if not row["href"]
+                    ],
+                    "captured_at": data.get("captured_at", ""),
+                }
+                write_json(checkout / "web/preview.json", preview)
                 if registry["benchmarks"]:
                     subprocess.run(
                         [
@@ -391,14 +478,31 @@ def assemble_previews(data_root, destination, framework):
                         framework / "src/gammabench/assets/report.css",
                         target / "assets/report.css",
                     )
-                data = json.loads((source / "run.json").read_text())
+                for row in data["rows"]:
+                    if row["href"]:
+                        row["href"] = (
+                            "benchmarks/gammaloop-ci-"
+                            + row["title"]
+                            + "/index.html?tab=history"
+                        )
                 render_index(
                     data,
-                    target / "index.html",
+                    target / "summary.html",
                     assets="assets/",
                     home="explore.html"
                     if registry["benchmarks"]
                     else "../../index.html",
+                )
+                render_index(
+                    {
+                        **data,
+                        "redirect": "ci-history/index.html"
+                        if registry["benchmarks"]
+                        else "summary.html",
+                    },
+                    target / "index.html",
+                    assets="assets/",
+                    home="summary.html",
                 )
             rows.append(
                 {
@@ -414,12 +518,27 @@ def assemble_previews(data_root, destination, framework):
                     "baseline": capture["baseline"],
                 }
             )
+        landing = {
+            "title": "GammaLoop PR #" + number,
+            "rows": list(reversed(rows)),
+            "preview": True,
+        }
         render_index(
-            {
-                "title": "GammaLoop PR #" + number,
-                "rows": list(reversed(rows)),
-                "preview": True,
-            },
+            landing,
+            destination / "previews" / ("pr-" + number) / "runs.html",
+            assets="../../assets/",
+            home="../index.html",
+        )
+        latest = pr.get("latest")
+        if latest is not None:
+            if latest not in {capture["path"] for capture in pr["captures"]}:
+                raise ValueError("Latest preview does not name a retained capture")
+            landing["redirect"] = (
+                Path(latest).relative_to(Path("previews") / ("pr-" + number)).as_posix()
+                + "/index.html"
+            )
+        render_index(
+            landing,
             destination / "previews" / ("pr-" + number) / "index.html",
             assets="../../assets/",
             home="../index.html",
