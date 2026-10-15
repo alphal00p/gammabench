@@ -257,11 +257,17 @@
     if (relative) { relative.textContent = reason; relative.removeAttribute('title'); }
   }
 
-  function rank(cell, logPerformance, description) {
+  function rank(cell, logPerformance, multiplier, description) {
     cell.dataset.tone = 'qualified';
     cell.style.setProperty('--matrix-hue', String(60 + 60 * Math.max(-1, Math.min(1, logPerformance))));
     const relative = cell.querySelector('.matrix-relative');
-    relative.textContent = description;
+    const value = document.createElement('strong');
+    value.className = 'matrix-multiplier';
+    value.textContent = multiplier;
+    const label = document.createElement('span');
+    label.className = 'matrix-comparison-label';
+    label.textContent = description;
+    relative.replaceChildren(value, ' ', label);
     relative.removeAttribute('title');
   }
 
@@ -290,7 +296,7 @@
             !positive(candidate.dataset.median) || !positive(candidate.dataset.count)) {
           unrank(cell, 'Reference is incomplete or unqualified; no ranking'); continue;
         }
-        rank(cell, 0, 'Reference · 1×');
+        rank(cell, 0, '1×', 'Reference');
         cell.dataset.tone = 'reference';
         continue;
       }
@@ -314,7 +320,7 @@
       const logPerformance = (candidate.dataset.direction === 'lower' ? -1 : 1) * Math.log2(pairedRatio);
       const ratio = pairedRatio.toLocaleString(undefined, {maximumSignificantDigits: 3});
       const measure = candidate.dataset.unit === 'ns' ? 'time' : 'value';
-      rank(cell, logPerformance, ratio + '× reference ' + measure + ' · ' + marker.dataset.pairs + ' pairs');
+      rank(cell, logPerformance, ratio + '×', 'reference ' + measure + ' · ' + marker.dataset.pairs + ' pairs');
       cell.querySelector('.matrix-relative').title = marker.dataset.reason || 'Qualified matched sample pairs';
     }
   }

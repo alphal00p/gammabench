@@ -179,7 +179,8 @@ Ranges are not confidence intervals.
 
 Compare groups workloads against tools, ways and measured versions. Select an
 original recorded comparison set and exact reference. Cells use the stored paired
-relative result: green means better, yellow equal, red worse. The fixed colour
+relative result, with the multiplier prominent and the captured median underneath.
+Green means better, yellow equal, red worse. The fixed colour
 scale saturates at a twofold difference. Latest independent captures show absolute
 values without ratios or ranking colours. No browser statistics are recomputed.
 Hide a column with ×; **Columns** restores it. Hiding the reference clears ranking

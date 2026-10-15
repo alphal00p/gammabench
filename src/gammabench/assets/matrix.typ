@@ -258,7 +258,8 @@
       #el("button", attrs: (id: "matrix-show-columns", type: "button"), [Show all columns])
     ])
     #el("p", class: "matrix-reading-guide", [
-      Cells show captured medians; observed ranges and qualification are available underneath.
+      Qualified cells lead with a candidate/reference multiplier, with captured medians below.
+      Observed ranges and qualification are available in Details.
       Colours compare each workload with its selected reference, using qualified matched sample pairs.
       Select an original recorded comparison set for stored paired ratios. Latest available captures show absolute values only.
       Different contracts and timing boundaries have separate matrices.
@@ -347,6 +348,7 @@
                     let measured = items.filter(matrix-has-measurement)
                     el("td", class: "matrix-cell", attrs: ("data-run": run.key,
                       "data-label": view.labels.at(run.key)), [
+                      #el("span", class: "matrix-relative", [Select a reference])
                       #if measured.len() == 0 {
                         el("strong", class: "matrix-value", [—])
                         el("span", class: "matrix-unavailable", [No measurement for this scope])
@@ -359,7 +361,6 @@
                           or (items.len() == 0 and run.task == item.task))) {
                         el("span", class: "matrix-cell-availability", unavailable.status + ": " + unavailable.at("reason", default: "Retained unavailable capture"))
                       }
-                      #el("span", class: "matrix-relative", [Select a reference])
                       #for pair in view.pairs.filter(pair => items.any(item => item.id == pair.candidate)) {
                         let left = view.lookup.at(pair.baseline)
                         let notes = matrix-pair-notes(pair)
