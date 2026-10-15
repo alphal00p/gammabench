@@ -185,6 +185,14 @@ unqualified and undated captures break lines. Archive-only, dirty or missing pin
 remain unplotted evidence. A source commit date is never inferred from a capture.
 Ranges are not confidence intervals.
 
+CI histories use each run's candidate discovery measurement, so successive
+main commits trace the evolution of GammaLoop. Paired baselines and independent
+confirmation measurements remain in Compare and Evidence. The
+[CI history overview](https://alphal00p.github.io/gammabench/ci-history/) overlays
+selected workloads using one metric, unit and scope. Workload checkboxes and
+the selected measurement are retained in the URL; clicking a point opens its
+original paired comparison.
+
 Compare groups workloads against tools, ways and measured versions. Select an
 original recorded comparison set and exact reference. Cells use the stored paired
 relative result, with the multiplier prominent and the captured median underneath.

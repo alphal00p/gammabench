@@ -9,6 +9,7 @@
     const panels = [...workspace.querySelectorAll('[data-workspace-panel]')];
     const groups = [...workspace.querySelectorAll('.history-series[data-series-id]')];
     const historyRoot = byId('benchmark-history');
+    const multiWorkload = workspace.dataset.multiWorkload === 'true';
     const includeRetired = byId('history-include-retired');
     const localStudies = new Set([workspace.dataset.defaultStudy, historyRoot?.dataset.defaultStudy,
       byId('comparison-matrix')?.dataset.defaultStudy, ...groups.map(group => group.dataset.study)]);
@@ -36,7 +37,8 @@
       if (state.case && !caseOptions.some(option => option.value === state.case)) state.case = '';
       const wantedCase = state.case || historyRoot?.dataset.defaultCase || caseOptions[0]?.value;
       setOptions(controls.case, caseOptions, wantedCase);
-      if (state.tab === 'history') state.case = controls.case?.value || state.case;
+      if (multiWorkload) state.case = '';
+      else if (state.tab === 'history') state.case = controls.case?.value || state.case;
       const metricOptions = templates.metric.filter(option => option.dataset.study === study());
       const wantedMetric = metricOptions.find(option => option.dataset.metric === (state.metric || selected()?.dataset.defaultMetric) &&
         (!state.scope || option.dataset.scope === state.scope) &&
@@ -49,10 +51,10 @@
         state.unit = wantedMetric.dataset.unit;
         state.direction = wantedMetric.dataset.direction;
       }
-      const visibleCase = state.case || controls.case?.value;
+      const visibleCase = multiWorkload ? '' : state.case || controls.case?.value;
       const visibleMetric = state.metric || wantedMetric?.dataset.metric;
       const choices = templates.series.filter(option => option.dataset.study === study() &&
-        option.dataset.case === visibleCase && option.dataset.metric === visibleMetric &&
+        (!visibleCase || option.dataset.case === visibleCase) && option.dataset.metric === visibleMetric &&
         ['scope', 'unit', 'direction'].every(key => !state[key] || groupMap.get(option.value)?.dataset[key] === state[key]));
       const wantedSeries = choices.find(option => option.value === state.series &&
         (!state.contract || groupMap.get(option.value)?.dataset.contract === state.contract));
@@ -60,7 +62,7 @@
       if (all) choices.unshift(all);
       setOptions(controls.series, choices, wantedSeries?.value || '');
       state.series = controls.series?.value || '';
-      const candidates = groups.filter(group => group.dataset.study === study() && group.dataset.case === visibleCase &&
+      const candidates = groups.filter(group => group.dataset.study === study() && (!visibleCase || group.dataset.case === visibleCase) &&
         group.dataset.metric === visibleMetric && ['scope', 'unit', 'direction'].every(key => !state[key] || group.dataset[key] === state[key]) &&
         (!state.contract || group.dataset.contract === state.contract) && (!state.series || group.dataset.seriesId === state.series));
       renderWayControls(candidates);
@@ -78,8 +80,9 @@
       if (summary) {
         const count = active.reduce((total, group) => total + group.querySelectorAll('.history-point').length, 0);
         const retained = active.reduce((total, group) => total + group.querySelectorAll('.history-unplotted').length, 0);
+        const selectedCount = multiWorkload ? new Set(active.map(group => group.dataset.case)).size : active.length;
         summary.textContent = active.length
-          ? `${active.length} implementation/configuration${active.length === 1 ? '' : 's'} · ${count} qualified commit point${count === 1 ? '' : 's'}.` +
+          ? `${selectedCount} ${multiWorkload ? 'workload' : 'implementation/configuration'}${selectedCount === 1 ? '' : 's'} · ${count} qualified commit point${count === 1 ? '' : 's'}.` +
             (retained ? ` ${retained} unplotted capture${retained === 1 ? '' : 's'} retained below.` : '')
           : 'No captured configuration for this selection. Availability and evidence remain visible.';
       }
@@ -173,7 +176,7 @@
       const legacyStudy = params.get('study') || requestedViewStudy || document.querySelector('.matrix-view:not([hidden])')?.dataset.study;
       const legacy = benchmarks.find(button => button.dataset.study === legacyStudy);
       state.benchmark = benchmarkMap.has(params.get('benchmark')) ? params.get('benchmark') : legacy?.dataset.benchmarkId || defaultBenchmark;
-      state.tab = tabs.some(tab => tab.dataset.workspaceTab === params.get('tab')) ? params.get('tab') :
+      state.tab = multiWorkload ? 'history' : tabs.some(tab => tab.dataset.workspaceTab === params.get('tab')) ? params.get('tab') :
         params.has('study') || params.has('reference') || params.has('baseline') || params.has('view') ? 'compare' : workspace.dataset.defaultTab || 'compare';
       if (navigateBenchmark(selected(), true)) return;
       state.case = params.get('case') || '';
@@ -265,8 +268,8 @@
         drawOverview(groups.filter(group => !group.hidden));
       }
     });
-    const wayIdentity = group => JSON.stringify([group.dataset.tool, group.dataset.way]);
-    const wayLabels = new Map(groups.map(group => [wayIdentity(group), `${group.dataset.toolLabel} / ${group.dataset.wayLabel}`]));
+    const wayIdentity = group => JSON.stringify([group.dataset.tool, group.dataset.way, ...(multiWorkload ? [group.dataset.case] : [])]);
+    const wayLabels = new Map(groups.map(group => [wayIdentity(group), `${multiWorkload ? group.dataset.case + ' · ' : ''}${group.dataset.toolLabel} / ${group.dataset.wayLabel}`]));
     const wayPositions = new Map([...wayLabels.keys()].map((key, index) => [key, index]));
     const hiddenWays = new Set();
     function renderWayControls(candidates) {
@@ -282,7 +285,7 @@
           refreshHistory(); writeQuery();
           [...container.querySelectorAll('input')].find(control => control.dataset.historyWay === key)?.focus();
         });
-        sample.className = 'history-series-sample'; sample.style.setProperty('--history-series-color', `var(--history-series-${wayPositions.get(key) % 6})`);
+        sample.className = 'history-series-sample'; sample.style.setProperty('--history-series-color', `var(--history-series-${wayPositions.get(key) % 12})`);
         label.append(input, sample, document.createTextNode(wayLabels.get(key))); container.append(label);
       }
     }
@@ -323,7 +326,7 @@
         return (value / scale).toLocaleString(undefined, {maximumSignificantDigits: 3}) + (label ? ' ' + label : '');
       };
       const svg = node('svg', {viewBox: `0 0 ${width} ${height}`, role: 'img', class: 'history-plot',
-        'aria-label': `${state.case}: chosen implementation histories by recorded capture date; captured medians and observed ranges`});
+        'aria-label': `${multiWorkload ? 'Selected workloads' : state.case}: chosen implementation histories by recorded capture date; captured medians and observed ranges`});
       svg.append(node('title', {}, 'Implementation histories by measurement capture date'),
         node('desc', {}, 'Each line segment keeps one implementation and fixed measurement context. Missing, failed, unqualified or undated captures break lines. Dates belong to measurements, not source commits.'));
       for (let tick = 0; tick < 4; tick++) {
@@ -339,7 +342,7 @@
       }
       svg.append(node('text', {x: left, y: 16, class: 'history-axis-label'}, selectedGroups[0]?.dataset.direction === 'higher' ? 'Higher is better' : 'Lower is better'));
       for (const [configuration, group] of selectedGroups.entries()) {
-        const color = `var(--history-series-${wayPositions.get(wayIdentity(group)) % 6})`;
+        const color = `var(--history-series-${wayPositions.get(wayIdentity(group)) % 12})`;
         const records = [...group.querySelectorAll('.history-point, .history-unplotted')];
         const captureCounts = new Map();
         for (const record of records) captureCounts.set(record.dataset.captureIndex, (captureCounts.get(record.dataset.captureIndex) || 0) + 1);
@@ -357,16 +360,23 @@
           if (!ambiguousCapture) segment.push(record);
           previousCapture = capture; previousTime = time;
           const data = record.dataset, center = x(record), medianY = y(Number(data.median));
-          const label = `${group.dataset.label}; ${data.commit}; captured ${data.createdAt}; median ${format(Number(data.median))}, observed range ${format(Number(data.min))} to ${format(Number(data.max))}, ${data.count} samples`;
+          const label = `${group.dataset.case}; ${group.dataset.label}; ${data.commit}; captured ${data.createdAt}; median ${format(Number(data.median))}, observed range ${format(Number(data.min))} to ${format(Number(data.max))}, ${data.count} samples`;
           const matching = [...document.querySelectorAll('.matrix-view')].filter(view => view.dataset.independent !== 'true' &&
             ['study', 'case', 'metric', 'unit', 'scope', 'direction', 'contract'].every(key => key === 'case' || view.dataset[key] === group.dataset[key]) &&
             [...view.querySelectorAll('thead th[data-snapshot]')].some(header => header.dataset.snapshot === data.snapshot));
           const captureSets = new Set(matching.map(view => view.dataset.set));
           const canCompare = captureSets.size === 1;
-          const mark = node('g', {class: 'history-mark', tabindex: '0', role: canCompare ? 'button' : 'img',
-            'aria-label': (canCompare ? 'Open recorded comparison: ' : '') + label, 'data-source-series': data.sourceSeries});
-          if (canCompare) {
+          const comparisonLink = data.comparisonHref ? new URL(data.comparisonHref, location.href) : null;
+          const canNavigate = comparisonLink?.origin === location.origin;
+          const mark = node('g', {class: 'history-mark', tabindex: '0', role: canCompare || canNavigate ? 'button' : 'img',
+            'aria-label': (canCompare || canNavigate ? 'Open recorded comparison: ' : '') + label, 'data-source-series': data.sourceSeries});
+          if (canCompare || canNavigate) {
             const open = () => {
+              if (!canCompare) {
+                for (const key of ['case', 'metric', 'unit', 'scope', 'direction', 'contract']) comparisonLink.searchParams.set(key, group.dataset[key]);
+                location.assign(comparisonLink.href);
+                return;
+              }
               selectMatrix({set: matching[0].dataset.set, metric: group.dataset.metric, case: group.dataset.case,
                 unit: group.dataset.unit, scope: group.dataset.scope, direction: group.dataset.direction, contract: group.dataset.contract});
               activateTab('compare');

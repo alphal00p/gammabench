@@ -123,6 +123,27 @@ class PagesTests(unittest.TestCase):
         for asset in ('explorer.js', 'explorer.css', 'metadata.json'):
             self.assertTrue((self.site / 'assets' / asset).is_file())
 
+    def test_ci_history_uses_candidates_while_compare_and_evidence_keep_both_sides(self):
+        from test_history_view import HistoryElements
+        from test_comparison_views import Elements
+        registry = json.loads((ROOT / 'web/benchmarks.json').read_text())
+        entries = [item for item in registry['benchmarks'] if item['family'] == 'gammaloop-ci' and item['analyses']]
+        for entry in entries:
+            html = (self.site / 'benchmarks' / entry['id'] / 'index.html').read_text()
+            history = HistoryElements(html)
+            self.assertTrue(history.points or history.unplotted)
+            self.assertTrue(all(point['data-task'] == 'candidate' for point in history.points + history.unplotted))
+            columns = [attrs for tag, attrs in Elements(html).elements if tag == 'th' and 'data-version' in attrs]
+            roles = {json.loads(attrs['data-run'])[2] for attrs in columns}
+            self.assertTrue({'baseline', 'candidate'} <= roles)
+            self.assertIn('ci-history/index.html', html)
+        overview = (self.site / 'ci-history/index.html').read_text()
+        self.assertIn('data-multi-workload="true"', overview)
+        history = HistoryElements(overview)
+        self.assertEqual({group['data-case'] for group in history.groups}, {entry['default_case'] for entry in entries})
+        self.assertTrue(all(point.get('data-comparison-href', '').startswith('../benchmarks/') for point in history.points))
+        self.assertNotIn('id="history-case"', overview)
+
     def test_scaffolded_benchmark_has_empty_workspace_without_fabricated_measurements(self):
         from gammabench.scaffold import create
         with tempfile.TemporaryDirectory() as temporary:
