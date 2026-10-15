@@ -224,6 +224,13 @@ def project_implementation(snapshot, task_or_series, *, values=None) -> dict:
         if isinstance(record, dict) and isinstance(record.get("task"), str) and isinstance(record.get("tool"), str)
         and record["task"] + "-" + record["tool"] == task}
     receipt = snapshot.get("provenance", {}).get("nix_build")
+    ci_gate = snapshot.get("provenance", {}).get("ci_gate")
+    if isinstance(ci_gate, dict) and variant in ("baseline", "candidate"):
+        source = {"kind": "git", "revision": ci_gate.get("identity", {}).get(variant, {}).get("commit"),
+                  "url": snapshot.get("provenance", {}).get("ci", {}).get("repository_url", "")}
+        source_binding = "provenance.ci_gate.identity." + variant
+        binaries = {name: binding for name, binding in bindings.items() if name in item.get("tool_ids", [])}
+        way = "native"
     if isinstance(receipt, dict):
         selected = _selection(receipt, {"id": task, "variant": variant})
         if selected is not None:

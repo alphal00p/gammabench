@@ -22,7 +22,7 @@
     implementation += (way_id: "", way_label: "Implementation not declared")
   }
   let retained = item.at("history", default: none)
-  if type(retained) == dictionary and retained.at("kind", default: "") == "nix-build" {
+  if type(retained) == dictionary and ("nix-build", "ci-gate").contains(retained.at("kind", default: "")) {
     return (implementation: implementation, revision: retained.revision, capture: retained.capture,
       binding: retained.evidence.at("source", default: (:)),
       dependencies: retained.at("context").at("fixed_sources", default: (:)),
@@ -110,7 +110,7 @@
 }
 #let history-context(study, item, snapshot, source) = {
   let retained = item.at("history", default: none)
-  if type(retained) == dictionary and retained.at("kind", default: "") == "nix-build" {
+  if type(retained) == dictionary and ("nix-build", "ci-gate").contains(retained.at("kind", default: "")) {
     return history-canonical((study: study, case: item.case, engine: item.engine,
       metric: item.metric, unit: item.unit, scope: item.scope, direction: item.direction,
       contract: snapshot.contracts.at(item.contract, default: none), workload: item.workload,

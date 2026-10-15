@@ -73,7 +73,9 @@ def validate_suite(value: Any) -> dict:
     if "process_wall_ns" in suite["metrics"]:
         _require(suite["metrics"]["process_wall_ns"] == PROCESS_WALL,
                  "process_wall_ns has a fixed unit, direction and scope")
-    suite["metrics"]["process_wall_ns"] = copy.deepcopy(PROCESS_WALL)
+    _require(suite.get("runner", "process-v1") in ("process-v1", "paired-gate-v1"), "unknown suite runner")
+    if suite.get("runner") != "paired-gate-v1":
+        suite["metrics"]["process_wall_ns"] = copy.deepcopy(PROCESS_WALL)
     for key, metric in suite["metrics"].items():
         _identifier(key, "metric id")
         _mapping(metric, f"metric {key}")

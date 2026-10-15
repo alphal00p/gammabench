@@ -3,6 +3,7 @@
 set -euo pipefail
 
 gammabench_repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+gammabench_repo_dir="${GAMMABENCH_CONTENT_ROOT:-$gammabench_repo_dir}"
 gammabench_destination="${1:-$gammabench_repo_dir/.gammabench/pages-site}"
 gammabench_destination="$(realpath -m "$gammabench_destination")"
 case "$gammabench_destination" in

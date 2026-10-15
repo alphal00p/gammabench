@@ -64,6 +64,7 @@ bench-document(
   "Benchmark evidence",
   "Verified snapshots, explicit work contracts and paired comparisons",
   interactive: true,
+  home: presentation.at("home", default: "https://alphal00p.github.io/gammabench/"),
 )[
 #hero(compact: true)[
   #kicker[Captured measurements · source evidence]
@@ -74,6 +75,17 @@ bench-document(
 ]
 
 #section[
+
+#for snapshot in analysis.snapshots {
+  let gate = snapshot.provenance.at("ci_gate", default: none)
+  if gate != none {
+    el("p", class: "notice")[
+      #gate.phase · Gate outcome:
+      #("Passed", "Regression or correctness failure", "Inconclusive").at(gate.report.status).
+      Numerical qualification uses the retained tolerances and reference outputs.
+    ]
+  }
+}
 
 #comparison-matrix((analysis,))
 
@@ -96,7 +108,7 @@ bench-document(
   Summary medians use completed measurement samples. Warmups are excluded.
   Timeouts and missing samples remain visible and suppress pair rankings.
   Ratios are candidate / baseline; speedup above 1 favours the candidate
-  using the metric's declared direction. Ratios require exact semantic
+  using the metric's declared direction. Ratios require declared semantic
   qualification, equal contracts and metric scopes, and complete matching rounds.
   Baseline selection filters precomputed comparisons; the browser does not
   calculate statistics. Metric and baseline filters leave unsupported and

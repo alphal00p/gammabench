@@ -42,3 +42,8 @@ Semantic metadata supplements existing workload, contract and validation gates;
 discovery labels do not establish output equivalence. See
 [metadata, search and versioned implementations](metadata.md) for the schema,
 quantity units, Unknown/N/A handling and examples.
+
+`runner: paired-gate-v1` selects the [CI gate protocol](ci.md), executed with
+`gammabench gate`. Unlike the default process runner, it declares only its
+explicit metrics. Policy and adapter output groups qualify baseline/candidate
+samples numerically; ordinary suites keep their existing exact checks.

@@ -78,6 +78,11 @@ def _pair_gate(left: dict[str, Any], right: dict[str, Any], snapshots: dict[str,
     va, vb = _validation(a, left["task"]), _validation(b, right["task"])
     if va.get("status") != "passed" or vb.get("status") != "passed":
         return "One or both tasks lack passed semantic validation."
+    if va.get("method") == "numeric-tolerance-v1" or vb.get("method") == "numeric-tolerance-v1":
+        from .gate import qualified
+        if left["snapshot_id"] == right["snapshot_id"] and qualified(a):
+            return None
+        return "No retained numerical-tolerance proof covers this pair."
     if left["snapshot_id"] == right["snapshot_id"]:
         for gate in a.get("validation", {}).get("equivalence", []):
             if (
@@ -198,6 +203,9 @@ def _series(snapshot: dict[str, Any], tasks: list[dict[str, Any]]) -> list[dict[
                                                   records, workload, qualification)
                 if "metadata_semantics" in item:
                     item["history"]["context"]["metadata_semantics"] = item["metadata_semantics"]
+            elif "ci_gate" in snapshot.get("provenance", {}):
+                from .gate import history
+                item["history"] = history(snapshot, definitions[task], metric, definition, workload)
             result.append(item)
     return result
 
@@ -432,7 +440,7 @@ def _csv(path: Path, fields: list[str], rows: Any) -> None:
         writer.writerows(rows)
 
 
-def render(snapshot_paths: Any, output: str | os.PathLike[str], *, baseline: str | None = None) -> dict[str, Any]:
+def render(snapshot_paths: Any, output: str | os.PathLike[str], *, baseline: str | None = None, home: str | None = None) -> dict[str, Any]:
     """Write a new, offline report directory; an existing destination is an error."""
     analysis = analyze(snapshot_paths, baseline=baseline)
     directory = Path(output).resolve()
@@ -461,7 +469,7 @@ def render(snapshot_paths: Any, output: str | os.PathLike[str], *, baseline: str
         "timeout_seconds", "duration_ns", "reason", "timing_interpretation",
     ], analysis["availability"])
     (directory / "presentation.json").write_text(
-        json.dumps(_presentation(analysis, directory), indent=2, sort_keys=True, allow_nan=False) + "\n",
+        json.dumps({**_presentation(analysis, directory), **({"home": home} if home else {})}, indent=2, sort_keys=True, allow_nan=False) + "\n",
         encoding="utf-8")
     assets = resources.files("gammabench").joinpath("assets")
     for name in ("report.typ", "matrix.typ", "components.typ", "rendering.json", "report.css", "report.js", "theme"):
