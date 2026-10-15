@@ -1,5 +1,5 @@
 #import "components.typ": el
-#import "matrix.typ": matrix-number, matrix-metric, matrix-option, matrix-select, matrix-unique
+#import "matrix.typ": matrix-number, matrix-metric, matrix-option, matrix-select, matrix-unique, matrix-implementation, matrix-implementation-status, matrix-status-summary
 
 // This view consumes captured summaries. It never combines samples, estimates
 // a revision, or derives a statistic in the browser. Context changes split lines.
@@ -17,9 +17,13 @@
 }
 #let history-commit(value) = type(value) == str and value.match(regex("^[0-9a-fA-F]{40}$")) != none
 #let history-source(item, snapshot, subjects, capture-modes) = {
+  let implementation = matrix-implementation(item, snapshot, subjects: subjects)
+  if item.at("implementation", default: none) == none {
+    implementation += (way_id: "", way_label: "Implementation not declared")
+  }
   let retained = item.at("history", default: none)
   if type(retained) == dictionary and retained.at("kind", default: "") == "nix-build" {
-    return (revision: retained.revision, capture: retained.capture,
+    return (implementation: implementation, revision: retained.revision, capture: retained.capture,
       binding: retained.evidence.at("source", default: (:)),
       dependencies: retained.at("context").at("fixed_sources", default: (:)),
       reason: retained.reason, repository: retained.repository, task: item.task, capture_task: "")
@@ -71,9 +75,11 @@
     if binding.at("dirty", default: false) { reason = "Dirty source capture does not identify an immutable measured commit." }
   }
   if capture == "unknown profile" { reason = "Ambiguous profile capture provenance; measurement retained below." }
-  let repository = subject.at("repository", default: "")
+  let repository = if item.at("implementation", default: none) != none and type(implementation.at("repository", default: none)) == str and implementation.repository.starts-with("https://") {
+    implementation.repository
+  } else { subject.at("repository", default: "") }
   if type(repository) != str or not repository.starts-with("https://") { repository = "" }
-  (revision: revision, capture: capture, binding: binding, dependencies: dependencies,
+  (implementation: implementation, revision: revision, capture: capture, binding: binding, dependencies: dependencies,
     reason: reason, repository: repository, task: task, capture_task: if known-capture { "" } else { task })
 }
 #let history-host(snapshot) = {
@@ -108,7 +114,8 @@
     return history-canonical((study: study, case: item.case, engine: item.engine,
       metric: item.metric, unit: item.unit, scope: item.scope, direction: item.direction,
       contract: snapshot.contracts.at(item.contract, default: none), workload: item.workload,
-      capture: source.capture, receipt_context: retained.at("context")))
+      capture: source.capture, way: source.implementation.way_id, repository: source.repository,
+      receipt_context: retained.at("context")))
   }
   let workload = item.at("workload", default: none)
   let contract = snapshot.contracts.at(item.contract, default: none)
@@ -124,6 +131,8 @@
   history-canonical((study: study, case: item.case, engine: item.engine, metric: item.metric,
     unit: item.unit, scope: item.scope, direction: item.direction, contract_id: item.contract,
     contract: contract, workload: workload, capture: source.capture, capture_task: source.capture_task,
+    way: source.implementation.way_id, repository: source.repository,
+    semantic_metadata: item.at("metadata_semantics", default: (:)),
     host: history-host(snapshot), dependencies: source.dependencies,
     harness: snapshot.provenance.at("harness_sources", default: (:)),
     controller: controller,
@@ -134,7 +143,9 @@
 #let history-record-row(record, group, reports) = {
   let item = record.item
   let source = record.source
-  let attrs = ("data-source-series": item.id, "data-snapshot": item.snapshot_id, "data-task": item.task)
+  let attrs = ("data-source-series": item.id, "data-snapshot": item.snapshot_id, "data-task": item.task,
+    "data-capture-index": str(record.capture_index), "data-created-at": record.snapshot.created_at,
+    "data-version-label": source.implementation.version_label)
   let class = "history-unplotted"
   if record.qualified {
     class = "history-point"
@@ -150,8 +161,11 @@
       #if history-commit(source.revision) {
         if source.repository != "" { el("a", attrs: (href: source.repository + "/commit/" + source.revision), source.revision.slice(0, 10)) }
         else { source.revision.slice(0, 10) }
-      } else { [No Git commit] }
+      } else { source.implementation.version_label }
       #el("span", class: "history-variant", item.variant)
+      #let declared-status = matrix-implementation-status(item)
+      #if declared-status != "" { el("span", class: "implementation-status", "Declared status: " + declared-status) }
+      #el("span", class: "history-capture-date", if record.snapshot.created_at == "" { "Capture date unavailable" } else { record.snapshot.created_at })
     ])
     #el("td", matrix-number(item.median, item.unit))
     #el("td", matrix-number(item.minimum, item.unit) + " – " + matrix-number(item.maximum, item.unit))
@@ -171,16 +185,21 @@
   let measurements = (:)
   let studies = ()
   let order = 0
+  let capture-indices = (:)
   for analysis in analyses {
     let study = analysis.snapshots.first().id
     studies.push(study)
+    for snapshot in analysis.snapshots {
+      if not capture-indices.keys().contains(snapshot.id) { capture-indices.insert(snapshot.id, capture-indices.len()) }
+    }
     for item in analysis.series {
       let snapshot = analysis.snapshots.find(snapshot => snapshot.id == item.snapshot_id)
       let source = history-source(item, snapshot, subjects, capture-modes)
       let key = history-context(study, item, snapshot, source)
       let group = groups.at(key, default: (id: "history-series-" + str(groups.len()), study: study,
         case: item.case, metric: item.metric, unit: item.unit, scope: item.scope, direction: item.direction,
-        engine: item.engine, capture: source.capture, contract: item.contract, snapshot: snapshot,
+        engine: item.engine, implementation: source.implementation, repository: source.repository,
+        capture: source.capture, contract: item.contract, snapshot: snapshot,
         dependencies: source.dependencies, workload: item.workload, records: ()))
       let complete = history-complete(item, snapshot)
       let qualified = complete and item.validation_status == "passed" and source.reason == ""
@@ -189,7 +208,7 @@
       if item.validation_status != "passed" {
         reason = "Qualification " + item.validation_status + ". " + item.validation_reason
       }
-      group.records.push((item: item, snapshot: snapshot, source: source, qualified: qualified, reason: reason, order: order))
+      group.records.push((item: item, snapshot: snapshot, source: source, qualified: qualified, reason: reason, order: order, capture_index: capture-indices.at(item.snapshot_id)))
       groups.insert(key, group)
       order += 1
       if not cases.contains((study, item.case)) { cases.push((study, item.case)) }
@@ -209,7 +228,7 @@
   let first-metric = if first-metrics.len() > 0 { first-metrics.first().metric } else { "" }
   if first-metrics.any(metric => metric.metric == initial-metric) { first-metric = initial-metric }
   let label-key(group) = history-canonical((group.study, group.case, group.metric,
-    group.scope, group.unit, group.engine, group.capture))
+    group.scope, group.unit, group.engine, group.implementation.way_id, group.capture))
   let counts = (:)
   for group in groups.values() {
     let key = label-key(group)
@@ -221,9 +240,10 @@
     let key = label-key(group)
     let position = positions.at(key, default: 0) + 1
     positions.insert(key, position)
-    let label = group.engine + " · " + group.capture
+    let label = group.implementation.tool_label + " / " + group.implementation.way_label + " · " + group.capture
     if counts.at(key) > 1 { label += " · configuration " + str(position) }
     group.insert("label", label)
+    group.insert("status", matrix-status-summary(group.records.map(record => record.item)))
     all-groups.push(group)
   }
   el("div", attrs: (id: "benchmark-history", "data-default-study": first-study,
@@ -236,7 +256,7 @@
           + if measurements.values().filter(other => other.study == metric.study and other.metric == metric.metric).len() > 1 { " · " + metric.scope } else { "" },
         attrs: ("data-study": metric.study, "data-metric": metric.metric, "data-unit": metric.unit, "data-scope": metric.scope, "data-direction": metric.direction),
         selected: metric.study == first-study and metric.metric == first-metric)).join()),
-      matrix-select("history-series", "Engine / configuration", (matrix-option("", "All recorded configurations"),
+      matrix-select("history-series", "Implementation / configuration", (matrix-option("", "All recorded configurations"),
         all-groups.map(group => matrix-option(group.id, group.label,
           attrs: ("data-study": group.study, "data-case": group.case, "data-metric": group.metric))).join()).join()),
     ).join())
@@ -244,19 +264,35 @@
       Points identify measured tool commits. Medians and observed min–max ranges come from retained captures;
       ranges are not confidence intervals. Lines join only the same workload, metric, contract, hardware,
       capture mode and fixed dependencies. Captures with incomplete configuration metadata stay separate.
-      Only captured revisions are shown, in capture order.
+      Chosen implementations share a measurement-capture-date axis. Source commits from different repositories are never treated as one commit sequence.
+      Capture dates describe measurements, not commit dates. Missing or failed captures break lines.
     ])
+    #if all-groups.any(group => group.status.declared.contains("retired")) {
+      el("label", class: "matrix-status-control", [
+        #el("input", attrs: (id: "history-include-retired", type: "checkbox", checked: ""), [])
+        Include retired configurations (mixed and undeclared statuses remain visible)
+      ])
+    }
     #el("p", attrs: (id: "history-summary", "aria-live": "polite"), [])
+    #el("section", class: "history-overview", attrs: ("aria-label": "Chosen implementation histories"), [
+      #el("div", attrs: (id: "history-visible-series", "aria-label": "Visible tool implementations"), [])
+      #el("div", class: "history-chart", attrs: (id: "history-overview-chart"), [])
+      #el("p", class: "history-reading-guide", [Source versions and exact capture dates are retained below. Separate line segments keep fixed contexts; missing and failed captures are gaps. Several versions in one capture remain distinct points at the same date. Activate a point to open its recorded comparison set.])
+    ])
     #for (index, group) in all-groups.enumerate() {
       let attrs = ("data-study": group.study, "data-case": group.case, "data-metric": group.metric,
         "data-unit": group.unit, "data-scope": group.scope, "data-direction": group.direction, "data-contract": group.contract,
-        "data-engine": group.engine, "data-capture": group.capture, "data-series-id": group.id,
-        "data-context": group.id, "data-label": group.label)
+        "data-engine": group.engine, "data-tool": group.implementation.tool_id, "data-way": group.implementation.way_id,
+        "data-tool-label": group.implementation.tool_label, "data-way-label": group.implementation.way_label,
+        "data-repository": group.repository, "data-capture": group.capture, "data-series-id": group.id,
+        "data-context": group.id, "data-label": group.label, "data-status-label": group.status.label,
+        "data-consistently-retired": json.encode(group.status.retired))
       if group.study != first-study or group.case != first-case or group.metric != first-metric { attrs.insert("hidden", "") }
       el("article", class: "history-series", attrs: attrs, [
         #el("h3", group.label)
+        #if group.status.label != "" { el("p", class: "implementation-status", group.status.label) }
         #el("p", class: "history-scope", group.scope + " · " + group.contract)
-        #el("div", class: "history-chart", attrs: ("data-series-id": group.id), [])
+        #el("div", class: "history-chart", attrs: ("data-series-id": group.id, hidden: ""), [])
         #if group.records.filter(record => record.qualified).len() == 1 {
           el("p", class: "history-sparse", [One qualified measured revision. No trend is available yet.])
         } else if group.records.filter(record => record.qualified).len() == 0 {

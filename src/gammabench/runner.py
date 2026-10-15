@@ -20,6 +20,7 @@ import uuid
 
 from . import __version__, hyperfine as hyperfine_backend
 from .nix import capture_receipt, load_receipt, verify_receipt
+from .metadata import capture_metadata
 from .history_context import controller_source_sha256
 from .schema import SchemaError, dotted, validate_suite
 from .snapshot import seal, sha256, staging_directory, write_json
@@ -306,6 +307,9 @@ def run(suite_path: str | Path, destination: str | Path, *, repeats: int = 15, w
                 "process_wall_includes": "spawn, complete child lifetime and process wait",
                 "measurement_backend": measurement_tool or {"name": "python", "clock": "time.perf_counter_ns"},
                 "timeout_seconds": timeout}}
+    metadata = capture_metadata(suite)
+    if metadata is not None:
+        snapshot["metadata"] = metadata
     if measurement_tool:
         snapshot["provenance"].update(
             clock="Hyperfine 2.0.0 std::time::Instant",

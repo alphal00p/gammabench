@@ -52,6 +52,9 @@ class ScaffoldTests(unittest.TestCase):
         self.assertEqual(entry["analyses"], [])
         self.assertEqual(entry["reports"], [])
         self.assertEqual(entry["default_case"], "100000-u64")
+        self.assertNotIn("metadata", entry)
+        self.assertEqual(suite["metadata"]["values"]["purpose"], "illustrative")
+        self.assertEqual(suite["metadata"]["values"]["operation"], "vector-transform")
         self.assertIn("nix run .#tensor-demo", (self.root / "suites/tensor-demo/README.md").read_text())
         self.assertIn("--register tensor-demo", (self.root / "suites/tensor-demo/README.md").read_text())
         recipe = Path(result["nix_recipe"]).read_text()
@@ -99,7 +102,7 @@ class ScaffoldTests(unittest.TestCase):
         self.assertFalse((self.root / "suites/existing").exists())
 
     def test_rejects_traversal_unsafe_names_reserved_outputs_and_symlinks(self):
-        for value in ("../outside", "a/b", "A-name", "a_name", "bad name", "-name", "x\nname", "default", "gammabench", "bench-other", "generation-count"):
+        for value in ("../outside", "a/b", "A-name", "a_name", "bad name", "-name", "x\nname", "default", "gammabench", "nodejs", "bench-other", "generation-count"):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 self.add(value)
         outside = self.root / "outside"

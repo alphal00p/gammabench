@@ -18,6 +18,7 @@ from urllib.parse import quote
 from . import __version__
 from .snapshot import load
 from .history_context import project_history
+from .metadata import field_definitions, metadata_values, project_implementation, semantic_metadata
 
 
 def _canonical(value: Any) -> str:
@@ -185,11 +186,18 @@ def _series(snapshot: dict[str, Any], tasks: list[dict[str, Any]]) -> list[dict[
                 "samples": samples,
                 **_stats([sample["value"] for sample in samples]),
             }
+            if "metadata" in snapshot:
+                values = metadata_values(snapshot["metadata"], case=identity["case"], task=task, metric=metric)
+                item["metadata"] = values
+                item["metadata_semantics"] = semantic_metadata(values, field_definitions(snapshot["metadata"]))
+                item["implementation"] = project_implementation(snapshot, definitions.get(task, identity), values=values)
             if isinstance(snapshot.get("provenance", {}).get("nix_build"), dict):
                 fields = sorted(_validation(snapshot, task).get("equivalence_fields", []))
                 qualification = {"fields": fields, "value": _semantic_values(snapshot, task, fields)}
                 item["history"] = project_history(snapshot, definitions.get(task, identity), metric, definition,
                                                   records, workload, qualification)
+                if "metadata_semantics" in item:
+                    item["history"]["context"]["metadata_semantics"] = item["metadata_semantics"]
             result.append(item)
     return result
 
@@ -221,6 +229,8 @@ def _rounds(series: dict[str, Any], snapshot: dict[str, Any]) -> tuple[dict[int,
 def _compare(left: dict[str, Any], right: dict[str, Any], snapshots: dict[str, Any]) -> dict[str, Any]:
     a, b = snapshots[left["snapshot_id"]], snapshots[right["snapshot_id"]]
     reasons = []
+    if _canonical(left.get("metadata_semantics", {})) != _canonical(right.get("metadata_semantics", {})):
+        reasons.append("Semantic workload/operation metadata differs or is unknown on one side.")
     if left["suite_id"] != right["suite_id"]:
         reasons.append("Suite identities differ.")
     if left["contract"] != right["contract"]:
@@ -312,6 +322,7 @@ def analyze(snapshot_paths: Any, *, baseline: str | None = None) -> dict[str, An
             "tools": snapshot.get("tools", {}), "host": snapshot.get("host", {}),
             "schedule": snapshot.get("schedule", {}), "provenance": snapshot.get("provenance", {}),
             "validation": snapshot.get("validation", {}),
+            **({"metadata": snapshot["metadata"]} if "metadata" in snapshot else {}),
             "artifacts": {"snapshot": "snapshot.json", "suite": "suite.json", "hashes": "files.sha256.json"},
             "raw_artifacts": [{"task": record["task"], "phase": record["phase"],
                                "repeat": record["repeat"], "status": record["status"], "files": record["raw"]}

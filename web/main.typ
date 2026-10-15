@@ -1,6 +1,10 @@
 #import "/src/gammabench/assets/components.typ": *
 #import "/src/gammabench/assets/matrix.typ": comparison-matrix
 #import "/src/gammabench/assets/history.typ": benchmark-history
+#import "explorer.typ": explorer
+
+#let projected = json(sys.inputs.at("catalog-path"))
+#let explorer-catalog = (schema_version: projected.schema_version, fields: projected.fields, cases: projected.cases)
 
 #let registry = json("benchmarks.json")
 #assert(registry.schema_version == 1, message: "Unsupported benchmark registry version")
@@ -19,7 +23,7 @@
   let captures = benchmark.analyses.map(path => {
     assert(path.starts-with("docs/results/") and path.ends-with("/analysis.json")
       and not path.split("/").contains(".."), message: "Analysis must be a retained report path")
-    json("/" + path)
+    projected.workspaces.find(item => item.id == benchmark.id).analyses.at(benchmark.analyses.position(other => other == path))
   })
   for (index, path) in benchmark.reports.enumerate() {
     assert(path == benchmark.analyses.at(index).replace("/analysis.json", "/index.html"),
@@ -74,6 +78,7 @@
     "data-default-tab": "history",
   ))[
     #el("aside", class: "workspace-sidebar", attrs: ("aria-label": "Benchmark navigation"))[
+      #el("p", class: "workspace-registry")[#link(root + "index.html")[← Explore all benchmarks]]
       == Benchmarks
 
       #for family in registry.families {
@@ -132,7 +137,12 @@
         "aria-labelledby": "workspace-tab-compare",
       ))[
         #if entry.analysis == none { planned-message(entry) } else {
-          comparison-matrix(analyses, titles: titles, initial-study: entry.study, show-study: false)
+          comparison-matrix(analyses, titles: titles, initial-study: entry.study, show-study: false,
+            subjects: registry.subjects, reports: reports, comparison-sets: entry.captures.enumerate().map(((index, capture)) => (
+              id: entry.benchmark.reports.at(index),
+              label: capture.snapshots.first().created_at + " · " + capture.snapshots.first().id,
+              analysis: capture,
+            )))
         }
       ]
       #el("section", class: "workspace-panel", attrs: (
@@ -178,14 +188,14 @@
 }
 
 #document("index.html")[
-  #bench-document("Benchmark workspace", "Browse benchmark families, follow measured tool commits and compare qualified results.",
-    assets: "assets/", home: "index.html", interactive: true, scripts: ("workspace.js",),
-  )[#workspace()]
+  #bench-document("Explore benchmarks", "Search benchmark cases and retained configurations across GammaLoop and related tools.",
+    assets: "assets/", home: "index.html", scripts: ("explorer.js",), styles: ("explorer.css",),
+  )[#explorer(explorer-catalog)]
 ]
 #document("docs/results/index.html")[
-  #bench-document("Benchmark workspace", "Preserved benchmark captures, commit histories and exact source evidence.",
-    assets: "../../assets/", home: "../../index.html", interactive: true, scripts: ("workspace.js",),
-  )[#workspace(root: "../../", assets: "../../assets/")]
+  #bench-document("Explore benchmarks", "Search benchmark cases, captures and source evidence.",
+    assets: "../../assets/", home: "../../index.html", scripts: ("explorer.js",), styles: ("explorer.css",),
+  )[#explorer(explorer-catalog, root: "../../")]
 ]
 #for entry in entries {
   document("benchmarks/" + entry.benchmark.id + "/index.html")[

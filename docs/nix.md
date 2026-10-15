@@ -201,3 +201,18 @@ contains target diagnostics and Hyperfine diagnostics.
 For legacy framework development without Hyperfine, `--backend python` explicitly
 selects the old process clock. Production Nix apps select pinned Hyperfine 2.0.0.
 Do not silently substitute that fallback in a comparison.
+
+## Searchable definitions and versioned results
+
+New scaffolds include controlled metadata in their suite. Replace it together
+with the starter operation and correctness contract. Declare stable ways on tasks
+when comparing alternative algorithms; source revision labels remain separate
+from those ways. Composing packages preserves each package’s effective metadata.
+
+The explorer indexes registered suite cases and retained captures. Report
+registration validates semantic metadata and rejects conflicting legacy overlays.
+Exact source/binary identities from Nix receipts supply tool/way/version columns
+and history evidence. See [the metadata protocol](metadata.md).
+
+The development shell also supplies pinned Node for browser-query semantics tests.
+It is not added to measured benchmark runtime closures.

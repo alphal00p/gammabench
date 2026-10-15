@@ -17,8 +17,12 @@ class Links(HTMLParser):
     def __init__(self):
         super().__init__()
         self.targets = []
+        self.catalog = None
 
     def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if attributes.get("id") == "benchmark-explorer":
+            self.catalog = json.loads(attributes["data-catalog"])
         for key, value in attrs:
             if key in ('href', 'src') and value:
                 self.targets.append(value)
@@ -109,17 +113,22 @@ class PagesTests(unittest.TestCase):
                 self.assertNotIn('class="matrix-cell"', html)
             for other in registry['benchmarks']:
                 self.assertIn(f'data-href="../../benchmarks/{other["id"]}/index.html"', html)
-        default = registry['default_benchmark']
         for path in ('index.html', 'docs/results/index.html'):
-            self.assertIn(f'data-default-benchmark="{default}"', (self.site / path).read_text())
-        self.assertIn('Planned', (self.site / 'index.html').read_text())
+            parser = Links()
+            parser.feed((self.site / path).read_text())
+            self.assertIsNotNone(parser.catalog)
+            self.assertEqual({case['benchmark_id'] for case in parser.catalog['cases']},
+                             {benchmark['id'] for benchmark in registry['benchmarks']})
+            self.assertTrue(any(not case['captures'] for case in parser.catalog['cases']))
+        for asset in ('explorer.js', 'explorer.css', 'metadata.json'):
+            self.assertTrue((self.site / 'assets' / asset).is_file())
 
     def test_scaffolded_benchmark_has_empty_workspace_without_fabricated_measurements(self):
         from gammabench.scaffold import create
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / 'checkout'
             root.mkdir()
-            for name in ('scripts', 'web', 'docs/results', 'snapshots', 'src/gammabench/assets'):
+            for name in ('scripts', 'web', 'docs/results', 'snapshots', 'src', 'suites'):
                 shutil.copytree(ROOT / name, root / name)
             (root / 'nix').mkdir()
             (root / 'flake.nix').write_text('{}')
@@ -135,8 +144,13 @@ class PagesTests(unittest.TestCase):
             self.assertNotIn('class="matrix-cell"', page)
             for tab in ('history', 'compare', 'evidence'):
                 self.assertIn(f'data-workspace-panel="{tab}"', page)
-            self.assertTrue('Planned operation · planned' in (destination / 'index.html').read_text(), 'planned benchmark appears in the sidebar')
-            self.assertIn('data-default-benchmark="full-diagrams"', (destination / 'index.html').read_text())
+            parser = Links()
+            parser.feed((destination / 'index.html').read_text())
+            planned = [case for case in parser.catalog['cases'] if case['benchmark_id'] == 'planned-operation']
+            self.assertEqual(len(planned), 1)
+            self.assertEqual(planned[0]['captures'], [])
+            self.assertTrue(planned[0]['planned'])
+            self.assertTrue(any(case['benchmark_id'] == 'full-diagrams' for case in parser.catalog['cases']))
 
     def test_existing_destination_and_source_destinations_are_protected(self):
         old = (self.site / 'index.html').read_bytes()

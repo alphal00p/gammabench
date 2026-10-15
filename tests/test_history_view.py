@@ -151,6 +151,16 @@ class HistoryViewTests(unittest.TestCase):
                 self.assertEqual(len(document.groups), 2)
                 self.assertEqual(len(document.points), 2)
 
+    def test_semantic_metadata_splits_history_but_descriptive_metadata_does_not(self):
+        analysis = self.simple_analysis()
+        _, item = self.with_next_capture(analysis)
+        item["metadata"] = {"description": "Updated display label"}
+        _, document = self.compile(analysis)
+        self.assertEqual(len(document.groups), 1)
+        item["metadata_semantics"] = {"operation": {"value": "a different operation", "definition": {"type": "enum", "scope": "workload"}}}
+        _, document = self.compile(analysis)
+        self.assertEqual(len(document.groups), 2)
+
     def test_explicit_profile_provenance_resolves_source_and_separates_capture_mode(self):
         analysis = self.simple_analysis()
         snapshot = analysis["snapshots"][0]
@@ -269,6 +279,34 @@ class HistoryViewTests(unittest.TestCase):
                 self.assertEqual(len(document.points), 0)
                 self.assertEqual(len(document.unplotted), 1)
                 self.assertNotIn('data-median="0"', page)
+
+    def test_declared_implementations_have_distinct_contexts_and_shared_overview_controls(self):
+        analysis = analyze(nix_capture(self.fixture, paired=True))
+        analysis["series"] = [item for item in analysis["series"] if item["metric"] == "completion_ns"]
+        for item in analysis["series"]:
+            way = "map" if item["variant"] == "candidate" else "iterate"
+            item["implementation"] = {"tool_id": "linnet", "tool_label": "GammaLoop", "way_id": way,
+                                      "way_label": way, "version_id": item["history"]["revision"],
+                                      "version_label": item["history"]["revision"][:10],
+                                      "revision": item["history"]["revision"], "source_kind": "git",
+                                      "repository": item["history"]["repository"]}
+        page, document = self.compile(analysis)
+        self.assertEqual({group["data-way"] for group in document.groups}, {"map", "iterate"})
+        self.assertEqual(len(document.groups), 2)
+        self.assertEqual({point["data-created-at"] for point in document.points},
+                         {analysis["snapshots"][0]["created_at"]})
+        self.assertIn('id="history-overview-chart"', page)
+        self.assertIn('id="history-visible-series"', page)
+        self.assertIn("capture-date axis", page)
+
+    def test_repository_changes_cannot_share_a_history_context(self):
+        analysis = analyze(nix_capture(self.fixture, paired=True))
+        analysis["series"] = [item for item in analysis["series"] if item["metric"] == "completion_ns"]
+        analysis["series"][1]["history"]["repository"] = "https://github.com/other/project"
+        _, document = self.compile(analysis)
+        self.assertEqual(len(document.groups), 2)
+        self.assertEqual({point["data-repository"] for point in document.points},
+                         {"https://github.com/alphal00p/gammaloop", "https://github.com/other/project"})
 
     def test_preserved_full_diagram_history_uses_actual_parent_and_candidate_pins(self):
         repository = Path(__file__).resolve().parents[1]

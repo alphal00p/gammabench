@@ -202,6 +202,7 @@ let
   builtinPackages = {
     default = example.package;
     inherit gammabench hyperfine;
+    inherit (pkgs) nodejs;
     integer-sum = example.package;
     bench-integer-sum = example.runner;
     rust-sort = rustSort.package;
@@ -259,6 +260,7 @@ in
       hyperfine
       toolchain
       pkgs.typst
+      pkgs.nodejs
     ];
   };
 }

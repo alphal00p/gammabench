@@ -11,11 +11,12 @@ import shutil
 import tempfile
 
 from .schema import SchemaError, validate_suite
+from .metadata import capture_metadata, field_definitions, metadata_values, same_value, semantic_metadata, validate_metadata
 from .snapshot import load, verify
 
 REGISTRY_PATH = Path("web/benchmarks.json")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-RESERVED = {"default", "gammabench", "hyperfine", "integer-sum", "rust-sort", "qgraf", "nauty",
+RESERVED = {"default", "gammabench", "hyperfine", "nodejs", "integer-sum", "rust-sort", "qgraf", "nauty",
             "generation-count", "generation-materialized", "generation-signed-routed", "generation-full-public"}
 
 
@@ -78,6 +79,10 @@ def validate_registry(registry: dict) -> dict:
         for analysis, report in zip(analyses, reports):
             if not _path(analysis, "docs/results/", "/analysis.json") or report != analysis.removesuffix("analysis.json") + "index.html":
                 raise SchemaError("Reports and analysis must be siblings under docs/results")
+        if "metadata" in item:
+            if isinstance(item["metadata"], dict) and "definitions" in item["metadata"]:
+                raise SchemaError("Catalog metadata cannot override the controlled field registry with frozen definitions")
+            validate_metadata(item["metadata"])
         if "suite" in item and not _path(item["suite"], "suites/", ".json"):
             raise SchemaError("Benchmark suite must be a relative suites/*.json path")
         if "nix_recipe" in item:
@@ -206,6 +211,27 @@ def _register_report(snapshot_paths, output: str | Path, benchmark_id: str, *,
     if any(snapshot[key] != expected_definition[key]
            for snapshot in analysis["snapshots"] for key in ("contracts", "metrics")):
         raise SchemaError("Capture contracts or metric definitions changed; register a new benchmark ID")
+    expected_metadata = (capture_metadata(expected_definition) if "tasks" in expected_definition else
+                         expected_definition.get("metadata"))
+    for item in analysis["series"]:
+        snapshot = next(snapshot for snapshot in analysis["snapshots"] if snapshot["id"] == item["snapshot_id"])
+        expected_task = item["task"]
+        receipt = snapshot.get("provenance", {}).get("nix_build")
+        if isinstance(receipt, dict):
+            from .history_context import _selection
+            selected = _selection(receipt, {"id": item["task"], "variant": item["variant"]})
+            if selected is not None:
+                expected_task = selected[3]
+        expected_values = metadata_values(expected_metadata, case=item["case"], task=expected_task, metric=item["metric"])
+        actual_values = metadata_values(snapshot.get("metadata"), case=item["case"], task=item["task"], metric=item["metric"])
+        if semantic_metadata(expected_values, field_definitions(expected_metadata)) != semantic_metadata(actual_values, field_definitions(snapshot.get("metadata"))):
+            raise SchemaError("Capture semantic metadata changed; register a new benchmark ID")
+        overlay = metadata_values(entry.get("metadata"), case=item["case"], task=item["task"], metric=item["metric"])
+        overlay_definitions = field_definitions(entry.get("metadata"))
+        if any(key in actual_values and actual_values[key] is not None and value is not None
+               and not same_value(key, actual_values[key], value, overlay_definitions)
+               for key, value in overlay.items()):
+            raise SchemaError("Catalog metadata conflicts with captured declarations")
     if not any(item["metric"] == entry["default_metric"] for item in analysis["series"]):
         raise SchemaError("Registered default metric is absent from this capture")
     if not entry["analyses"]:

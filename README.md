@@ -2,7 +2,9 @@
 
 Browse the [published results](https://alphal00p.github.io/gammabench/).
 
-Reproducible benchmarks for GammaLoop and related tools. A suite declares the
+Reproducible benchmarks for GammaLoop and related tools. Search the published
+case catalog by keywords and controlled metadata, then open a case to compare
+tools, ways and source versions. A suite declares the
 workloads, pinned tools, required output and measurement scopes. Each execution
 produces an immutable, verifiable snapshot. Reports derive tables, comparisons,
 CSV and analysis from those snapshots without changing the measurements.
@@ -57,7 +59,8 @@ it is not a physics performance claim. Without installing the package, use
   matched rounds with the same case, output contract, metric unit/scope and
   semantic validation. Different outputs and missing results are disclosed.
 
-See [the protocol](docs/protocol.md), [the suite format](docs/suites.md), and
+See [the protocol](docs/protocol.md), [the suite format](docs/suites.md),
+[searchable metadata and implementation identities](docs/metadata.md), and
 [the generation suite](suites/generation/README.md).
 
 ## Create and register a benchmark
@@ -72,7 +75,8 @@ nix run .#gammabench -- report results/my-operation \
 
 The command creates a native Rust starter, inputs, suite JSON, Nix recipe and
 instructions. Its catalog entry supplies the Nix package/app automatically and
-appears on the site as planned. Replace the starter operation, timing contract
+appears on the site as planned. Minimal controlled metadata lives in its suite,
+with fields and values validated before execution. Replace the starter operation, timing contract
 and exact checks with the intended benchmark. Report registration retains sealed
 evidence under `snapshots/measured/`, renders the report and appends its catalog
 paths. Existing files and captures are never overwritten.
@@ -138,8 +142,8 @@ nix develop
 PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
-This supplies the pinned Hyperfine and Typst executables used by the integration
-checks. The explicit Python backend remains available for legacy framework tests.
+This supplies pinned Hyperfine and Typst plus Node for the JavaScript query
+semantics tests. Node is a development/test tool; the published site is static. The explicit Python backend remains available for legacy framework tests.
 
 The framework and authored adapters are MIT licensed. Fixture and third-party
 provenance is retained separately; upstream tools keep their own terms.
@@ -155,36 +159,44 @@ public Pages palette with compact, single-font monospace typography. The upstrea
 vendored unchanged at a complete revision with SHA-256 provenance and licenses
 in `src/gammabench/assets/theme/`.
 
-The site is a benchmark workspace. Choose a benchmark in the family navigation,
-then use **History**, **Compare** or **Evidence**. Each benchmark has a stable
-static URL and loads only its own captures. Families without captures are labelled
-Planned. Links retain the selected view, workload, metric and reference.
+The landing page is a generic benchmark explorer. Keywords search case names,
+descriptions and metadata; **Add filter** offers declared fields and typed
+conditions. Filter chips, grouping and query URLs work across benchmark families.
+Capture conditions always match the same retained configuration. Unknown and
+not-applicable values remain distinct. The registered framework examples are
+clearly labelled and have no published captures until measurements are registered.
 
-History plots captured medians and observed min/max ranges against the actual
-measured tool commits. It separates workload inputs, metric scope/unit/direction,
-output contract, hardware, capture mode and fixed dependencies. Archive-only
-sources, dirty or missing pins, failed and censored results remain evidence rather
-than fabricated commit points. A single revision is shown as one point, and two
-revisions remain a two-point history. Ranges are not confidence intervals.
+Each case opens a stable benchmark workspace with **History**, **Compare** and
+**Evidence**. Old root links still route to their selected benchmark and case.
+The explorer and reports use one monospace font and responsive layouts.
 
-Compare shows workloads as rows and tool/implementation versions as columns.
-Select the measured stage and exact reference. Cells show readable units and the
-stored paired relative result. Green means better than the reference, yellow is
-equal, and red means worse; the fixed colour scale saturates at a twofold
-difference. Unqualified, missing and ambiguous captures remain neutral with their
-reasons. Colour compares one workload to its reference, rather than unrelated
-absolute workload costs. All reference directions come from precomputed analysis;
-the browser never inverts a median or computes a new statistic.
+History plots captured medians and observed min/max ranges on actual measurement
+capture dates, retaining measured source commits. Tool/way toggles select shared
+histories; fixed configurations remain separate segments. Missing, unsuccessful,
+unqualified and undated captures break lines. Archive-only, dirty or missing pins
+remain unplotted evidence. A source commit date is never inferred from a capture.
+Ranges are not confidence intervals.
+
+Compare groups workloads against tools, ways and measured versions. Select an
+original recorded comparison set and exact reference. Cells use the stored paired
+relative result: green means better, yellow equal, red worse. The fixed colour
+scale saturates at a twofold difference. Latest independent captures show absolute
+values without ratios or ranking colours. No browser statistics are recomputed.
+Hide a column with ×; **Columns** restores it. Hiding the reference clears ranking
+until explicit reselection. Per-set visibility is retained in the URL.
 
 Evidence links to retained reports, analysis, CSV, snapshot records and checksums.
 The workspace does not rewrite captures or create cross-capture paired comparisons.
 Existing complete reports remain available at their original URLs.
 
-The workspace is authored in `web/main.typ`. The versioned
+The workspace and explorer are authored in `web/main.typ` and `web/explorer.typ`. The versioned
 [`web/benchmarks.json`](web/benchmarks.json) registry declares families, stable
 benchmark IDs, definition versions, default metrics/workloads and paired arrays of retained
 `analyses`/`reports` paths. Add a benchmark there after generating its report; append
 captures to the same entry when the benchmark definition remains compatible.
+An optional controlled metadata overlay can annotate legacy captures; exact
+fixture annotations retain input hash bindings. It cannot contradict known
+captured metadata. See [the metadata protocol](docs/metadata.md).
 Keep a new definition under a new benchmark ID when its meaning changes. The
 first registered snapshot anchors the display identity, so retain capture order.
 
@@ -219,9 +231,11 @@ handles orchestration, source acquisition, snapshot integrity, analysis and
 historical imports. The versioned JSON protocol allows those responsibilities to
 move to another language without changing archived result formats or Typst pages.
 
-The Pages workflow compiles the landing pages with pinned Typst, then copies
-precomputed reports and sealed snapshots into the static artifact. It does not
-install or run Python. To preview the same artifact locally:
+The Pages workflow validates and projects the catalog using the framework’s
+Python standard-library code, then compiles authored pages with pinned Typst and
+copies precomputed reports and sealed snapshots into the static artifact.
+Presentation remains Typst, CSS and browser JavaScript; there is no browser Python
+runtime or application server. To preview the same artifact locally:
 
 ```sh
 bash scripts/build-pages.sh .gammabench/pages-preview

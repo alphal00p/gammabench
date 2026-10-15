@@ -9,6 +9,7 @@ import shutil
 
 from . import __version__
 from .nix import load_receipt
+from .metadata import capture_metadata, field_definitions, metadata_values
 from .schema import IDENTIFIER, SHA256, SchemaError, validate_suite
 from .snapshot import sha256, write_json
 
@@ -77,6 +78,10 @@ def assemble(destination: str | Path, variants: dict[str, str | Path], *,
             raise SchemaError("variant packages must provide the same selected task IDs")
         task_ids = selected
         tasks = [task for task in definition["tasks"] if task["id"] in selected]
+        if reference is not None and field_definitions(definition.get("metadata")) != field_definitions(reference.get("metadata")):
+            raise SchemaError("Variant packages require compatible metadata field definitions")
+        if definition.get("metadata", {}).get("metrics", {}) != reference.get("metadata", {}).get("metrics", {}):
+            raise SchemaError("Variant packages require identical per-metric metadata declarations")
         identities = [(task["case"], task["engine"], task["contract"]) for task in tasks]
         if len(identities) != len(set(identities)):
             raise SchemaError("revision labels would collapse implementation variants; select an original task with --task")
@@ -97,6 +102,8 @@ def assemble(destination: str | Path, variants: dict[str, str | Path], *,
     suite = copy.deepcopy(reference)
     suite.update(tools={}, tasks=[], unsupported=[], qualification_censored=[],
                  nix_build_receipt="nix-build-receipt.json")
+    if "metadata" in suite:
+        suite["metadata"].pop("tasks", None)
     receipt = {"schema_version": 1, "sources": {}, "subjects": {},
                "build": {"assembler": f"gammabench {__version__}", "variants": {}},
                "comparison_context": {"assembly": "packaged-variants-v1", "suite_id": suite["id"],
@@ -124,6 +131,9 @@ def assemble(destination: str | Path, variants: dict[str, str | Path], *,
             suite["tools"][key] = copy.deepcopy(tool)
         for original_task in package["tasks"]:
             task = copy.deepcopy(original_task)
+            metadata = capture_metadata(package["definition"])
+            if metadata is not None:
+                task["metadata"] = metadata_values(metadata, case=task["case"], task=task["id"])
             task.update(id=label + "." + task["id"], variant=label,
                         tool_ids=[label + "." + name for name in task["tool_ids"]],
                         inputs={name: "variants/" + label + "/" + path for name, path in task["inputs"].items()})

@@ -90,6 +90,12 @@ def load(path: str | Path, verify: bool = True) -> dict:
         raise SchemaError("snapshot suite ID does not match suite.json")
     if suite["contracts"] != snapshot["contracts"] or suite["metrics"] != snapshot["metrics"]:
         raise SchemaError("snapshot contracts or metrics do not match suite.json")
+    from .metadata import capture_metadata
+    metadata = snapshot.get("metadata")
+    expected = capture_metadata(suite, definitions=(metadata or {}).get("definitions"),
+                                vocabulary_version=(metadata or {}).get("vocabulary_version"))
+    if metadata != expected:
+        raise SchemaError("snapshot metadata does not match suite.json")
     return snapshot
 
 
@@ -106,6 +112,12 @@ def seal(staging: str | Path, destination: str | Path, snapshot: dict, suite: di
         raise SchemaError("snapshot suite ID does not match suite")
     if snapshot["contracts"] != suite["contracts"] or snapshot["metrics"] != suite["metrics"]:
         raise SchemaError("snapshot must retain the suite contracts and metric scopes")
+    from .metadata import capture_metadata
+    metadata = snapshot.get("metadata")
+    expected = capture_metadata(suite, definitions=(metadata or {}).get("definitions"),
+                                vocabulary_version=(metadata or {}).get("vocabulary_version"))
+    if metadata != expected:
+        raise SchemaError("snapshot must retain the suite metadata declarations")
     write_json(staging / "snapshot.json", snapshot)
     write_json(staging / "suite.json", suite)
     inventory = {name: sha256(path) for name, path in _files(staging).items()}

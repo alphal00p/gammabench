@@ -523,7 +523,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual([attrs["href"] for tag, attrs in document.elements if tag == "link"], ["theme/site.css", "report.css"])
         self.assertFalse(any(tag == "style" for tag, _ in document.elements))
         self.assertEqual(set(document.options), {"case", "baseline", "variant", "metric", "status",
-                                                 "matrix-case", "matrix-metric", "matrix-reference"})
+                                                 "matrix-case", "matrix-set", "matrix-metric", "matrix-reference"})
         self.assertIn("four-loop", {option["value"] for option in document.options["case"]})
         self.assertIn("completion_ns", {option["value"] for option in document.options["metric"]})
         selected = [option["value"] for option in document.options["baseline"] if option["selected"]]

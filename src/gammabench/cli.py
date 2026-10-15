@@ -60,6 +60,10 @@ def _parser() -> argparse.ArgumentParser:
     scaffold.add_argument("--description")
     scaffold.add_argument("--family-title")
     scaffold.add_argument("--repo", type=Path, default=Path.cwd())
+    catalog = subcommands.add_parser("catalog", help="validate and project searchable benchmark metadata")
+    catalog.add_argument("--repo", type=Path, default=Path.cwd())
+    catalog.add_argument("--output", type=Path)
+    catalog.add_argument("--include-workspaces", action="store_true", help="include presentation projections for the Pages build")
     integrity = subcommands.add_parser("verify", help="verify every file in a relocated snapshot")
     integrity.add_argument("snapshot", type=Path)
     for command in ("report", "compare"):
@@ -108,6 +112,16 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(create(arguments.repo, arguments.benchmark_id, family=arguments.family,
                                     title=arguments.title, description=arguments.description,
                                     family_title=arguments.family_title)))
+        elif arguments.command == "catalog":
+            from .catalog import build_catalog
+            result = build_catalog(arguments.repo, include_workspaces=arguments.include_workspaces)
+            encoded = json.dumps(result, indent=2, allow_nan=False) + "\n"
+            if arguments.output:
+                arguments.output.parent.mkdir(parents=True, exist_ok=True)
+                with arguments.output.open("x", encoding="utf-8") as stream:
+                    stream.write(encoded)
+            else:
+                print(encoded, end="")
         elif arguments.command == "verify":
             inventory = verify(arguments.snapshot)
             snapshot = load(arguments.snapshot)

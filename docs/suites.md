@@ -32,3 +32,13 @@ To benchmark a new category, add another directory under `suites/`, with its
 own cases, driver, validator and contracts. Keep hardware/compiler controls
 in the execution protocol and benchmark semantics in that suite. Changing
 output guarantees or a timer boundary requires a new contract or metric scope.
+
+## Discovery metadata and implementation identity
+
+Suites may declare controlled metadata, per-case values and namespaced extension
+fields. Task and metric metadata override suite/case defaults at their declared
+scopes. New snapshots freeze their vocabulary and effective declarations.
+Semantic metadata supplements existing workload, contract and validation gates;
+discovery labels do not establish output equivalence. See
+[metadata, search and versioned implementations](metadata.md) for the schema,
+quantity units, Unknown/N/A handling and examples.

@@ -12,7 +12,7 @@
 
 #let bench-document(
   title, description, body,
-  assets: "", home: "https://alphal00p.github.io/gammabench/", interactive: false, scripts: (),
+  assets: "", home: "https://alphal00p.github.io/gammabench/", interactive: false, scripts: (), styles: (),
 ) = el("html", attrs: (lang: "en"))[
   #el("head")[
     #void("meta", attrs: (charset: "utf-8"))
@@ -22,6 +22,7 @@
     #el("title")[#title · gammabench]
     #void("link", attrs: (rel: "stylesheet", href: assets + "theme/site.css"))
     #void("link", attrs: (rel: "stylesheet", href: assets + "report.css"))
+    #for style in styles { void("link", attrs: (rel: "stylesheet", href: assets + style)) }
     #el("script", attrs: (defer: "", src: assets + "theme/site.js"))[]
     #if interactive { el("script", attrs: (defer: "", src: assets + "report.js"))[] }
     #for script in scripts { el("script", attrs: (defer: "", src: assets + script))[] }
@@ -37,7 +38,7 @@
         ]
       ]
       #el("nav", class: "portal-nav", attrs: ("aria-label": "Primary"))[
-        #link(home)[Results]
+        #link(home)[Explore]
         #link("https://alphal00p.github.io/gammaloop/")[GammaLoop]
         #link("https://github.com/alphal00p/gammabench/blob/main/docs/protocol.md")[Protocol]
       ]

@@ -140,6 +140,8 @@ def validate_suite(value: Any) -> dict:
         if "timeout_seconds" in task:
             _number(task["timeout_seconds"], "timeout_seconds")
             _require(task["timeout_seconds"] > 0, "timeout_seconds must be positive")
+    from .metadata import capture_metadata
+    capture_metadata(suite)
     return suite
 
 
@@ -188,4 +190,10 @@ def validate_snapshot(snapshot: Any) -> dict:
         for path in record["raw"].values():
             _text(path, "raw path")
             _require(not path.startswith("/") and ".." not in path.split("/"), "raw paths must be snapshot-relative")
+    if "metadata" in snapshot:
+        from .metadata import validate_metadata
+        validate_metadata(snapshot["metadata"], cases={record["case"] for record in snapshot["records"]} |
+                          set(snapshot["metadata"].get("cases", {})),
+                          tasks={record["task"] for record in snapshot["records"]} |
+                          set(snapshot.get("schedule", {}).get("selected_tasks", [])), metrics=snapshot["metrics"])
     return snapshot

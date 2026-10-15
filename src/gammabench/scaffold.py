@@ -28,6 +28,10 @@ def _suite(benchmark_id: str, description: str) -> dict:
         "schema_version": 1,
         "id": benchmark_id,
         "description": description,
+        "metadata": {"schema_version": 1, "values": {"topic": ["framework"], "purpose": "illustrative",
+            "operation": "vector-transform", "target": "kernel",
+            "physics.model": {"state": "not-applicable"}, "physics.loops.amplitude": {"state": "not-applicable"}},
+            "cases": {"100000-u64": {"workload.items": 100000, "workload.element_type": "u64"}}},
         "contracts": {contract: {
             "description": "Starter operation: retain every transformed u64 in the exact expected sequence.",
             "included": ["Transform every value of an existing Vec<u64> with value * 3 + 1", "Retain the transformed vector"],
@@ -43,6 +47,7 @@ def _suite(benchmark_id: str, description: str) -> dict:
         }},
         "tasks": [{
             "id": "transform", "case": "100000-u64", "engine": benchmark_id, "variant": "baseline", "contract": contract,
+            "metadata": {"implementation.way": "direct-transform", "implementation.way_label": "Direct transform"},
             "tool_ids": ["driver"], "inputs": {"workload.txt": "workload.txt"},
             "expected": {"items": 100000, "total": 14999950000}, "equivalence_fields": ["validated_output"],
             "argv": ["{tool:driver}"],

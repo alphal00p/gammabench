@@ -24,6 +24,10 @@ jobs:
           hyperfine_package=$(nix build .#hyperfine --no-link --print-out-paths)
           echo "$hyperfine_package/bin" >> "$GITHUB_PATH"
           echo "GAMMABENCH_HYPERFINE=$hyperfine_package/bin/hyperfine" >> "$GITHUB_ENV"
+      - name: Provide pinned JavaScript test runtime
+        run: |
+          node_package=$(nix build .#nodejs --no-link --print-out-paths)
+          echo "$node_package/bin" >> "$GITHUB_PATH"
       - run: python -m pip install -e .
       - run: python -m unittest discover -s tests -v
       - run: gammabench validate suites/examples/sum.json
