@@ -35,6 +35,10 @@ to 7200 seconds. It does not change the default fast limit, pair count, shared
 deadline, thresholds or confirmation procedure. Preparation performed by the
 adapter remains inside that shared deadline even when it is outside a reported
 native metric.
+By default a numerical mismatch already fails the gate and stops further timing
+confirmation. An explicit `confirm_on_correctness_failure: true` retains the
+independent confirmation when a timing regression signal accompanies that
+mismatch; the numerical failure remains a failure throughout.
 
 Policies may opt into `correctness_format: "decimal"`. Every output component
 must then be a finite decimal string (at most 1024 characters); metrics and
@@ -46,7 +50,8 @@ remain in sealed records and are used again when qualifying a loaded snapshot.
 An adapter with an independently established analytic zero may declare
 `certified_zero` with a `certificate` object containing an identifier `id` and
 complete `sha256`, plus a `components` list of distinct `index` and
-`absolute_bound` entries. Bounds use the output's number/decimal format. Every
+`absolute_bound` entries. Bounds use the output's number/decimal format; decimal
+bounds may contain up to 2048 characters to retain full derivation precision. Every
 adapter result must carry the exact same `certificate`; missing or different
 witnesses fail. The retained adapter owns the domain proof, physical dimensions,
 source/settings checks and witness construction. Gammabench checks each declared

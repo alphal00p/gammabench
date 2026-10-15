@@ -210,6 +210,19 @@ class PerformanceGateTests(unittest.TestCase):
             | {"components": [{"index": 2, "absolute_bound": "1e-150"}]},
         )
         self.assertEqual(absent.analyze(data)["invalid_input"], 1)
+        # Bounds may retain a 1024-significant-digit derivation plus its
+        # exponent without rounding the declared policy to fit output width.
+        exact_bound = "1." + "0" * 1023 + "e-150"
+        wide_bound = PairedGate(
+            BASELINE,
+            CANDIDATE,
+            THRESHOLDS,
+            EVALUATOR_METHODS,
+            correctness_format="decimal",
+            certified_zero=policy
+            | {"components": [{"index": 0, "absolute_bound": exact_bound}]},
+        )
+        self.assertEqual(wide_bound.analyze(data)["status"], 0)
 
     def test_regression_needs_independent_confirmation(self):
         report = self.gate.analyze(measurements(13.0, 13e-6))

@@ -58,7 +58,9 @@ class PairedGate:
                 if type(index) is not int or index < 0 or index in self.zero_bounds:
                     raise InvalidMeasurements("Invalid or repeated certified component")
                 bound = self.number(
-                    component["absolute_bound"], decimal_output=self.decimal_output
+                    component["absolute_bound"],
+                    decimal_output=self.decimal_output,
+                    max_length=2048,
                 )
                 if bound < 0:
                     raise InvalidMeasurements(
@@ -67,11 +69,11 @@ class PairedGate:
                 self.zero_bounds[index] = bound
 
     @staticmethod
-    def number(value: object, *, decimal_output=False):
+    def number(value: object, *, decimal_output=False, max_length=1024):
         if decimal_output:
             if (
                 not isinstance(value, str)
-                or len(value) > 1024
+                or len(value) > max_length
                 or not re.fullmatch(
                     r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", value
                 )

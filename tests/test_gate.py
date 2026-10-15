@@ -183,6 +183,7 @@ Path(destination).write_text(json.dumps({"metrics": {"seconds": 10},
         self.assertFalse(qualified(snapshot))
 
     def test_correctness_failure_does_not_skip_required_timing_confirmation(self):
+        self.policy["confirm_on_correctness_failure"] = True
         self.adapter.write_text(
             self.adapter.read_text().replace('mode == "slow"', 'mode == "wrong"')
         )
@@ -190,6 +191,18 @@ Path(destination).write_text(json.dumps({"metrics": {"seconds": 10},
         self.assertEqual(status, 1)
         self.assertTrue((public / "confirmation").exists())
         self.assertFalse(qualified(load(public / "confirmation")))
+
+    def test_default_correctness_failure_keeps_the_existing_confirmation_policy(self):
+        self.adapter.write_text(
+            self.adapter.read_text().replace('mode == "slow"', 'mode == "wrong"')
+        )
+        status, public = self.capture("wrong")
+        self.assertEqual(status, 1)
+        self.assertFalse((public / "confirmation").exists())
+        with self.assertRaises(ValueError):
+            validate_policy(
+                self.policy | {"confirm_on_correctness_failure": 1}, self.suite
+            )
 
     def test_regression_confirms_independently_without_pooling_rounds(self):
         status, public = self.capture("slow")

@@ -33,6 +33,8 @@ def validate_policy(policy, suite):
     budget_class = policy.get("budget_class", "fast")
     if budget_class not in ("fast", "slow"):
         raise SchemaError("Unknown gate budget class")
+    if type(policy.get("confirm_on_correctness_failure", False)) is not bool:
+        raise SchemaError("Correctness-failure confirmation must be boolean")
     if (
         type(budget) not in (int, float)
         or not math.isfinite(budget)
@@ -268,7 +270,14 @@ def run(suite_path, destination, *, policy_path, private_work_dir, label=None):
     deadline = time.monotonic() + policy["budget_seconds"]
     for phase, first in (("discovery", "AB"), ("confirmation", "BA")):
         if phase == "confirmation" and not (
-            not report["invalid_input"] and report["confirmation_required"]
+            report["confirmation_required"]
+            and (
+                report["status"] == 2
+                or (
+                    policy.get("confirm_on_correctness_failure", False)
+                    and not report["invalid_input"]
+                )
+            )
         ):
             break
         target = destination / phase
@@ -374,7 +383,9 @@ def run(suite_path, destination, *, policy_path, private_work_dir, label=None):
                         "outputs",
                         "metadata",
                     }
-                    certificate = (policy.get("certified_zero") or {}).get("certificate")
+                    certificate = (policy.get("certified_zero") or {}).get(
+                        "certificate"
+                    )
                     if certificate is not None:
                         fields.add("certificate")
                     if (
