@@ -10,7 +10,10 @@ import unittest
 
 from gammabench.report import analyze
 import test_report as report_fixtures
+import test_gate as gate_fixtures
 from test_history_context import nix_capture
+from gammabench.metadata import project_implementation
+from gammabench.snapshot import load
 
 
 class HistoryElements(HTMLParser):
@@ -90,6 +93,88 @@ class HistoryViewTests(unittest.TestCase):
         analysis["snapshots"].append(next_snapshot)
         analysis["series"].append(next_item)
         return next_snapshot, next_item
+
+    def ci_analysis(self):
+        fixture = gate_fixtures.GateTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        _, root = fixture.capture("slow")
+        paths = [root / "discovery", root / "confirmation"]
+        snapshots = {load(path)["id"]: load(path) for path in paths}
+        analysis = analyze(paths)
+        for snapshot in analysis["snapshots"]:
+            snapshot["created_at"] = "2026-10-14T12:00:00Z"
+        for item in analysis["series"]:
+            item["implementation"] = project_implementation(snapshots[item["snapshot_id"]], item,
+                                                              values={"implementation.way": "native"})
+        return analysis
+
+    def append_ci_capture(self, analysis, identifier, revision, date, *, case="demo", suite=None):
+        snapshot = copy.deepcopy(analysis["snapshots"][0])
+        original = snapshot["id"]
+        snapshot.update(id=identifier, created_at=date)
+        if suite:
+            snapshot["suite_id"] = suite
+        analysis["snapshots"].append(snapshot)
+        rows = []
+        for item in list(analysis["series"]):
+            if item["snapshot_id"] == original:
+                row = copy.deepcopy(item)
+                row.update(id=identifier + ":" + item["task"] + ":" + item["metric"], snapshot_id=identifier, case=case)
+                row["history"]["revision"] = revision
+                rows.append(row)
+        analysis["series"].extend(rows)
+        return rows
+
+    def test_ci_history_selects_candidates_and_keeps_confirmation_out_of_capture_order(self):
+        analysis = self.ci_analysis()
+        self.append_ci_capture(analysis, "next", "c" * 40, "2026-10-15T12:00:00Z")
+        page, document = self.compile(analysis)
+        self.assertEqual(len(document.groups), 1)
+        self.assertEqual([point["data-commit"] for point in document.points], ["b" * 40, "c" * 40])
+        self.assertEqual([point["data-capture-index"] for point in document.points], ["0", "1"])
+        self.assertTrue(all(point["data-task"] == "candidate" for point in document.points))
+        self.assertIn("Paired baselines and confirmation measurements remain in Compare and Evidence", page)
+        self.assertEqual(len(analysis["snapshots"]), 3)
+        self.assertEqual(len(analysis["series"]), 6)
+
+    def test_ci_candidate_failures_remain_gaps_and_context_changes_stay_separate(self):
+        analysis = self.ci_analysis()
+        failed = self.append_ci_capture(analysis, "failed", "c" * 40, "2026-10-15T12:00:00Z")
+        for item in failed:
+            if item["variant"] == "candidate":
+                item.update(validation_status="failed", validation_reason="numerical mismatch")
+        changed = self.append_ci_capture(analysis, "changed", "d" * 40, "2026-10-16T12:00:00Z")
+        for item in changed:
+            item["history"]["context"]["host"]["cpu"] = "different CPU"
+        _, document = self.compile(analysis)
+        self.assertEqual(len(document.groups), 2)
+        self.assertEqual(len(document.unplotted), 1)
+        self.assertEqual(document.unplotted[0]["data-task"], "candidate")
+        self.assertEqual(document.unplotted[0]["data-capture-index"], "1")
+        self.assertEqual([point["data-capture-index"] for point in document.points], ["0", "2"])
+
+    def test_ci_workloads_keep_independent_capture_indices_and_sort_late_publications(self):
+        analysis = self.ci_analysis()
+        self.append_ci_capture(analysis, "other-new", "c" * 40, "2026-10-15T12:00:00Z", case="other", suite="other-suite")
+        self.append_ci_capture(analysis, "new", "c" * 40, "2026-10-15T12:00:00Z")
+        self.append_ci_capture(analysis, "other-old", "b" * 40, "2026-10-14T12:00:00Z", case="other", suite="other-suite")
+        _, document = self.compile(analysis)
+        self.assertEqual(len(document.groups), 2)
+        for group in document.groups:
+            points = [point for point in document.points if point["data-series-id"] == group["data-series-id"]]
+            self.assertEqual([point["data-capture-index"] for point in points], ["0", "1"])
+            self.assertEqual([point["data-commit"] for point in points], ["b" * 40, "c" * 40])
+
+    def test_ci_corpus_and_settings_changes_split_the_tool_history(self):
+        for field in ("corpus_sha256", "config_sha256"):
+            with self.subTest(field=field):
+                analysis = self.ci_analysis()
+                self.append_ci_capture(analysis, "changed-input", "c" * 40, "2026-10-15T12:00:00Z")
+                analysis["snapshots"][-1]["provenance"]["ci_gate"]["identity"]["candidate"][field] = "f" * 64
+                _, document = self.compile(analysis)
+                self.assertEqual(len(document.points), 2)
+                self.assertEqual(len(document.groups), 2)
 
     def test_measured_tool_commits_join_across_captures_without_mutating_analysis(self):
         analysis = self.simple_analysis()

@@ -16,6 +16,19 @@
 
 // Combine original arrays for display, without calculating new comparisons or
 // changing source measurements. Appending a capture preserves the study anchor.
+#let combine-captures(captures) = {
+  let snapshots = captures.map(capture => capture.snapshots).flatten()
+  assert(snapshots.map(snapshot => snapshot.id).dedup().len() == snapshots.len(), message: "Capture registered more than once")
+  let series = captures.map(capture => capture.series).flatten()
+  assert(series.map(item => item.id).dedup().len() == series.len(), message: "Duplicate measurement identity")
+  let baseline = captures.first().baseline
+  (schema_version: 1,
+    baseline: if captures.all(capture => capture.baseline == baseline) { baseline } else { none },
+    snapshots: snapshots, series: series,
+    comparisons: captures.map(capture => capture.comparisons).flatten(),
+    availability: captures.map(capture => capture.availability).flatten(),
+    warnings: captures.map(capture => capture.warnings).flatten().dedup())
+}
 #let entries = registry.benchmarks.map(benchmark => {
   assert(benchmark.id.match(regex("^[a-z0-9][a-z0-9-]*$")) != none, message: "Benchmark ID must be a safe URL segment")
   assert(family-ids.contains(benchmark.family), message: "Unknown benchmark family")
@@ -34,22 +47,8 @@
   if captures.len() == 0 {
     return (benchmark: benchmark, captures: (), study: "planned:" + benchmark.id, analysis: none)
   }
-  let snapshots = captures.map(capture => capture.snapshots).flatten()
-  let snapshot-ids = snapshots.map(snapshot => snapshot.id)
-  assert(snapshot-ids.dedup().len() == snapshot-ids.len(), message: "Capture registered more than once")
-  let series = captures.map(capture => capture.series).flatten()
-  assert(series.map(item => item.id).dedup().len() == series.len(), message: "Duplicate measurement identity")
-  let baseline = captures.first().baseline
-  let analysis = (
-    schema_version: 1,
-    baseline: if captures.all(capture => capture.baseline == baseline) { baseline } else { none },
-    snapshots: snapshots,
-    series: series,
-    comparisons: captures.map(capture => capture.comparisons).flatten(),
-    availability: captures.map(capture => capture.availability).flatten(),
-    warnings: captures.map(capture => capture.warnings).flatten().dedup(),
-  )
-  (benchmark: benchmark, captures: captures, study: snapshots.first().id, analysis: analysis)
+  let analysis = combine-captures(captures)
+  (benchmark: benchmark, captures: captures, study: analysis.snapshots.first().id, analysis: analysis)
 })
 #assert(entries.map(entry => entry.study).dedup().len() == entries.len(), message: "A capture cannot anchor two benchmarks")
 #let default-entry = entries.find(entry => entry.benchmark.id == registry.default_benchmark)
@@ -121,6 +120,9 @@
         id: "workspace-history", "data-workspace-panel": "history", role: "tabpanel",
         "aria-labelledby": "workspace-tab-history",
       ))[
+        #if entry.benchmark.family == "gammaloop-ci" {
+          el("p", link(root + "ci-history/index.html", [Plot several CI workloads together →]))
+        }
         #if entry.analysis == none {
           planned-message(entry)
         } else {
@@ -188,8 +190,49 @@
 #document("index.html")[
   #bench-document("Explore benchmarks", "Search benchmark cases and retained configurations across GammaLoop and related tools.",
     assets: "assets/", home: "index.html", scripts: ("explorer.js",), styles: ("explorer.css",),
-  )[#explorer(explorer-catalog)]
+  )[
+    #if registry.families.any(family => family.id == "gammaloop-ci") {
+      el("p", link("ci-history/index.html", [GammaLoop CI history · compare workloads →]))
+    }
+    #explorer(explorer-catalog)
+  ]
 ]
+#if registry.families.any(family => family.id == "gammaloop-ci") {
+  document("ci-history/index.html")[
+    #bench-document("GammaLoop CI history", "Compare the evolution of several workloads using one metric and shared units.",
+      assets: "../assets/", home: "../index.html", scripts: ("workspace.js",),
+    )[
+      #hero(compact: true)[
+        = GammaLoop CI history
+        Select a measurement, then choose the workloads to plot together.
+      ]
+      #let ci-entries = entries.filter(entry => entry.benchmark.family == "gammaloop-ci" and entry.analysis != none)
+      #if ci-entries.len() == 0 {
+        el("p", [No CI measurements have been published yet.])
+      } else {
+        let analysis = combine-captures(ci-entries.map(entry => entry.captures).flatten())
+        let study = analysis.snapshots.first().id
+        let reports = (:)
+        let comparisons = (:)
+        for entry in ci-entries {
+          for (index, capture) in entry.captures.enumerate() {
+            for snapshot in capture.snapshots {
+              reports.insert(snapshot.id, "../" + entry.benchmark.reports.at(index))
+              comparisons.insert(snapshot.id, "../benchmarks/" + entry.benchmark.id + "/index.html?tab=compare&set=" + entry.benchmark.reports.at(index))
+            }
+          }
+        }
+        el("div", class: "bench-section", attrs: (id: "benchmark-workspace", "data-default-benchmark": "gammaloop-ci-history",
+          "data-default-study": study, "data-default-tab": "history", "data-multi-workload": "true"))[
+          #el("a", attrs: (href: "index.html", "data-benchmark-id": "gammaloop-ci-history",
+            "data-study": study, "data-default-metric": "generation_seconds"), [All CI workloads])
+          #benchmark-history((analysis,), subjects: registry.subjects, reports: reports, comparisons: comparisons,
+            initial-study: study, initial-metric: "generation_seconds", multi-workload: true)
+        ]
+      }
+    ]
+  ]
+}
 #document("docs/results/index.html")[
   #bench-document("Explore benchmarks", "Search benchmark cases, captures and source evidence.",
     assets: "../../assets/", home: "../../index.html", scripts: ("explorer.js",), styles: ("explorer.css",),

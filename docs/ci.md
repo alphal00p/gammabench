@@ -59,6 +59,19 @@ The branch index selects the newest eligible capture for the current PR head.
 Old, failed and inconclusive captures remain accessible. A merged PR is not
 relabeled as a main measurement: main runs again against the previous main SHA.
 
+History shows the candidate's discovery measurement for each run. Baselines
+and independent confirmations remain in Compare and Evidence; neither is
+substituted into the candidate trend. Failed or unqualified candidate captures
+stay visible as gaps. Captures are ordered by their recorded measurement dates,
+and changes to hardware, workloads or fixed measurement conditions split lines.
+
+The CI history overview at `ci-history/` plots several selected workloads on
+one chart. Its metric selector requires matching metric IDs, units, scope and
+direction; each workload has its own line and observed ranges. Workload
+checkboxes are saved in the URL. A point links to that workload's original
+comparison set. The overview uses retained values without creating new ratios
+between independent captures or rewriting any sealed evidence.
+
 Each publication commits atomically, retries Git push races against the latest
 branch, rejects conflicting duplicate identities, and accepts identical retries.
 To recover a failed publication, manually dispatch GammaLoop's **Publish

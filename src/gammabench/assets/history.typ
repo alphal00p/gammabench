@@ -16,6 +16,13 @@
   json.encode(normalize(value), pretty: false)
 }
 #let history-commit(value) = type(value) == str and value.match(regex("^[0-9a-fA-F]{40}$")) != none
+// A CI run is a paired comparison, but its candidate is the new tool version.
+// Discovery supplies the history point; confirmation stays in Compare/Evidence.
+#let history-selected(snapshot, item: none) = {
+  let gate = snapshot.provenance.at("ci_gate", default: none)
+  gate == none or (gate.at("phase", default: "") == "discovery"
+    and (item == none or item.at("variant", default: "") == "candidate"))
+}
 #let history-source(item, snapshot, subjects, capture-modes) = {
   let implementation = matrix-implementation(item, snapshot, subjects: subjects)
   if item.at("implementation", default: none) == none {
@@ -111,11 +118,16 @@
 #let history-context(study, item, snapshot, source) = {
   let retained = item.at("history", default: none)
   if type(retained) == dictionary and ("nix-build", "ci-gate").contains(retained.at("kind", default: "")) {
+    let ci-inputs = none
+    if retained.kind == "ci-gate" {
+      let identity = snapshot.provenance.at("ci_gate").at("identity").at("candidate")
+      ci-inputs = (corpus: identity.corpus_sha256, settings: identity.config_sha256)
+    }
     return history-canonical((study: study, case: item.case, engine: item.engine,
       metric: item.metric, unit: item.unit, scope: item.scope, direction: item.direction,
       contract: snapshot.contracts.at(item.contract, default: none), workload: item.workload,
       capture: source.capture, way: source.implementation.way_id, repository: source.repository,
-      receipt_context: retained.at("context")))
+      receipt_context: retained.at("context"), ci_inputs: ci-inputs))
   }
   let workload = item.at("workload", default: none)
   let contract = snapshot.contracts.at(item.contract, default: none)
@@ -140,12 +152,14 @@
     clock: snapshot.provenance.at("clock", default: none),
     process_clock_scope: snapshot.provenance.at("process_wall_includes", default: none), unknown: unknown))
 }
-#let history-record-row(record, group, reports) = {
+#let history-record-row(record, group, reports, comparisons) = {
   let item = record.item
   let source = record.source
   let attrs = ("data-source-series": item.id, "data-snapshot": item.snapshot_id, "data-task": item.task,
     "data-capture-index": str(record.capture_index), "data-created-at": record.snapshot.created_at,
     "data-version-label": source.implementation.version_label)
+  let comparison = comparisons.at(item.snapshot_id, default: none)
+  if comparison != none { attrs.insert("data-comparison-href", comparison) }
   let class = "history-unplotted"
   if record.qualified {
     class = "history-point"
@@ -178,7 +192,7 @@
   ])
 }
 
-#let benchmark-history(analyses, subjects: (:), reports: (:), capture-modes: (:), initial-study: none, initial-case: none, initial-metric: none) = {
+#let benchmark-history(analyses, subjects: (:), reports: (:), comparisons: (:), capture-modes: (:), initial-study: none, initial-case: none, initial-metric: none, multi-workload: false) = {
   let groups = (:)
   let availability = ()
   let cases = ()
@@ -186,13 +200,26 @@
   let studies = ()
   let order = 0
   let capture-indices = (:)
+  let capture-suites = (:)
+  let has-ci = analyses.any(analysis => analysis.snapshots.any(snapshot => snapshot.provenance.at("ci_gate", default: none) != none))
   for analysis in analyses {
     let study = analysis.snapshots.first().id
     studies.push(study)
-    for snapshot in analysis.snapshots {
-      if not capture-indices.keys().contains(snapshot.id) { capture-indices.insert(snapshot.id, capture-indices.len()) }
+    let snapshots = analysis.snapshots.filter(snapshot => history-selected(snapshot))
+    if snapshots.len() > 0 and snapshots.all(snapshot => snapshot.provenance.at("ci_gate", default: none) != none) {
+      snapshots = snapshots.sorted(key: snapshot => snapshot.created_at)
     }
-    for item in analysis.series {
+    for snapshot in snapshots {
+      if not capture-indices.keys().contains(snapshot.id) {
+        let key = history-canonical((study, snapshot.suite_id))
+        let index = capture-suites.at(key, default: 0)
+        capture-indices.insert(snapshot.id, index)
+        capture-suites.insert(key, index + 1)
+      }
+    }
+    let series = snapshots.map(snapshot => analysis.series.filter(item => item.snapshot_id == snapshot.id
+      and history-selected(snapshot, item: item))).flatten()
+    for item in series {
       let snapshot = analysis.snapshots.find(snapshot => snapshot.id == item.snapshot_id)
       let source = history-source(item, snapshot, subjects, capture-modes)
       let key = history-context(study, item, snapshot, source)
@@ -216,6 +243,8 @@
       measurements.insert(metric-key, (study: study, metric: item.metric, unit: item.unit, scope: item.scope, direction: item.direction))
     }
     for item in analysis.availability {
+      let snapshot = analysis.snapshots.find(snapshot => snapshot.id == item.snapshot_id)
+      if snapshot != none and not history-selected(snapshot, item: item) { continue }
       availability.push((study: study, item: item))
       let case = item.at("case", default: "")
       if not cases.contains((study, case)) { cases.push((study, case)) }
@@ -249,17 +278,25 @@
   el("div", attrs: (id: "benchmark-history", "data-default-study": first-study,
     "data-default-case": first-case, "data-default-metric": first-metric), [
     #el("div", class: "history-controls", (
-      matrix-select("history-case", "Workload", cases.map(case => matrix-option(case.last(), case.last(),
-        attrs: ("data-study": case.first()), selected: case.first() == first-study and case.last() == first-case)).join()),
+      if multi-workload { [] } else { matrix-select("history-case", "Workload", cases.map(case => matrix-option(case.last(), case.last(),
+        attrs: ("data-study": case.first()), selected: case.first() == first-study and case.last() == first-case)).join())
+      },
       matrix-select("history-metric", "Measurement", measurements.values().map(metric => matrix-option(history-canonical((metric.metric, metric.scope, metric.unit, metric.direction)),
         matrix-metric(metric.metric) + " · " + metric.unit
           + if measurements.values().filter(other => other.study == metric.study and other.metric == metric.metric).len() > 1 { " · " + metric.scope } else { "" },
         attrs: ("data-study": metric.study, "data-metric": metric.metric, "data-unit": metric.unit, "data-scope": metric.scope, "data-direction": metric.direction),
         selected: metric.study == first-study and metric.metric == first-metric)).join()),
-      matrix-select("history-series", "Implementation / configuration", (matrix-option("", "All recorded configurations"),
+      if multi-workload { [] } else { matrix-select("history-series", "Implementation / configuration", (matrix-option("", "All recorded configurations"),
         all-groups.map(group => matrix-option(group.id, group.label,
-          attrs: ("data-study": group.study, "data-case": group.case, "data-metric": group.metric))).join()).join()),
+          attrs: ("data-study": group.study, "data-case": group.case, "data-metric": group.metric))).join()).join())
+      },
     ).join())
+    #if has-ci {
+      el("p", class: "history-reading-guide")[CI history follows each run's candidate discovery measurement. Paired baselines and confirmation measurements remain in Compare and Evidence.]
+    }
+    #if multi-workload {
+      el("p", class: "history-reading-guide")[Select workloads below to show their evolution together. The selected metric, units and measurement scope are shared; each workload keeps its own line and captured range.]
+    }
     #el("p", class: "history-reading-guide", [
       Points identify measured tool commits. Medians and observed min–max ranges come from retained captures;
       ranges are not confidence intervals. Lines join only the same workload, metric, contract, hardware,
@@ -275,7 +312,7 @@
     }
     #el("p", attrs: (id: "history-summary", "aria-live": "polite"), [])
     #el("section", class: "history-overview", attrs: ("aria-label": "Chosen implementation histories"), [
-      #el("div", attrs: (id: "history-visible-series", "aria-label": "Visible tool implementations"), [])
+      #el("div", attrs: (id: "history-visible-series", "aria-label": if multi-workload { "Visible workloads" } else { "Visible tool implementations" }), [])
       #el("div", class: "history-chart", attrs: (id: "history-overview-chart"), [])
       #el("p", class: "history-reading-guide", [Source versions and exact capture dates are retained below. Separate line segments keep fixed contexts; missing and failed captures are gaps. Several versions in one capture remain distinct points at the same date. Activate a point to open its recorded comparison set.])
     ])
@@ -289,7 +326,7 @@
         "data-consistently-retired": json.encode(group.status.retired))
       if group.study != first-study or group.case != first-case or group.metric != first-metric { attrs.insert("hidden", "") }
       el("article", class: "history-series", attrs: attrs, [
-        #el("h3", group.label)
+        #el("h3", if multi-workload { group.case + " · " + group.label } else { group.label })
         #if group.status.label != "" { el("p", class: "implementation-status", group.status.label) }
         #el("p", class: "history-scope", group.scope + " · " + group.contract)
         #el("div", class: "history-chart", attrs: ("data-series-id": group.id, hidden: ""), [])
@@ -302,7 +339,7 @@
           #el("summary", [Captured values and provenance])
           #el("div", class: "history-tablewrap", el("table", class: "history-table", [
             #el("thead", el("tr", ("Measured commit", "Median", "Observed range", "Samples", "Qualification", "Evidence").map(title => el("th", attrs: (scope: "col"), title)).join()))
-            #el("tbody", group.records.map(record => history-record-row(record, group, reports)).join())
+            #el("tbody", group.records.map(record => history-record-row(record, group, reports, comparisons)).join())
           ]))
           #el("p", [*Contract definition:*])
           #el("pre", json.encode(group.snapshot.contracts.at(group.contract, default: (:)), pretty: true))
