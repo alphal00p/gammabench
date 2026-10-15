@@ -2,7 +2,9 @@
 
 Read README.md and docs/protocol.md before editing. Keep benchmark definitions,
 correctness checks, output contracts, tool pins, raw records and display consistent.
-Use the Python standard library for execution and analysis; report presentation
+Use the Python standard library for orchestration and analysis, pinned Hyperfine
+2.0.0 for whole-process measurements, and Nix for benchmark packages. Internal
+code-region metrics retain their declared harness clocks. Report presentation
 uses pinned Typst. Suite-specific drivers may use pinned external tools. Keep production physics in the tool being measured.
 
 Before each new jj change ask for the author name/email and set it explicitly.

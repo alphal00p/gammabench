@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "id": "rust-vector-sort",
+  "description": "Native Rust code-region example: stable and unstable sorting of the same deterministic permutation.",
+  "contracts": {
+    "exact-u64-sort-v1": {
+      "description": "Retain the exact sorted sequence of 100000 distinct u64 values.",
+      "included": [
+        "Sort the already allocated and shuffled Vec<u64>",
+        "Retain the sorted vector"
+      ],
+      "excluded": [
+        "Read and parse the workload",
+        "Allocate and shuffle the input",
+        "Verify the exact output and compute its witness",
+        "Print results and destroy the vector",
+        "Process startup"
+      ]
+    }
+  },
+  "metrics": {
+    "compute_ns": {
+      "unit": "ns",
+      "direction": "lower",
+      "scope": "Sort an existing Vec<u64> through the retained sorted vector",
+      "result_field": "compute_ns"
+    }
+  },
+  "tools": {
+    "sort-driver": {
+      "kind": "executable",
+      "path": "./sort-bench",
+      "version": "gammabench-rust-sort 1",
+      "version_command": [
+        "{tool}",
+        "--version"
+      ]
+    }
+  },
+  "tasks": [
+    {
+      "id": "sort-stable",
+      "case": "100000-u64",
+      "engine": "rust-sort",
+      "variant": "stable",
+      "contract": "exact-u64-sort-v1",
+      "tool_ids": [
+        "sort-driver"
+      ],
+      "inputs": {
+        "workload.txt": "workload.txt"
+      },
+      "expected": {
+        "items": 100000,
+        "total": 4999950000
+      },
+      "equivalence_fields": [
+        "items",
+        "total",
+        "sorted_fnv"
+      ],
+      "argv": [
+        "{tool:sort-driver}",
+        "stable"
+      ]
+    },
+    {
+      "id": "sort-unstable",
+      "case": "100000-u64",
+      "engine": "rust-sort",
+      "variant": "unstable",
+      "contract": "exact-u64-sort-v1",
+      "tool_ids": [
+        "sort-driver"
+      ],
+      "inputs": {
+        "workload.txt": "workload.txt"
+      },
+      "expected": {
+        "items": 100000,
+        "total": 4999950000
+      },
+      "equivalence_fields": [
+        "items",
+        "total",
+        "sorted_fnv"
+      ],
+      "argv": [
+        "{tool:sort-driver}",
+        "unstable"
+      ]
+    }
+  ]
+}

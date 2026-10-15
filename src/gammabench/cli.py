@@ -45,7 +45,14 @@ def _parser() -> argparse.ArgumentParser:
     execute.add_argument("--cpu", type=int, action="append", dest="cpus")
     execute.add_argument("--env", action="append", default=[], metavar="NAME=VALUE", help="explicit override captured in evidence")
     execute.add_argument("--label", help="stable snapshot identifier")
+    execute.add_argument("--backend", choices=("hyperfine", "python"), default="hyperfine",
+                         help="process measurement backend (default: pinned Hyperfine 2.0.0)")
+    execute.add_argument("--hyperfine", type=Path, help="Hyperfine 2.0.0 executable")
     _pins(execute)
+    variants = subcommands.add_parser("variants", help="assemble realized package revisions for paired measurement")
+    variants.add_argument("destination", type=Path)
+    variants.add_argument("--variant", action="append", required=True, metavar="LABEL=PACKAGE")
+    variants.add_argument("--task", action="append", dest="selected_tasks", help="original task ID, shared by all packages")
     integrity = subcommands.add_parser("verify", help="verify every file in a relocated snapshot")
     integrity.add_argument("snapshot", type=Path)
     for command in ("report", "compare"):
@@ -76,10 +83,16 @@ def main(argv: list[str] | None = None) -> int:
                        selected_tasks=arguments.selected_tasks, cache_dir=arguments.cache_dir,
                        overrides=_assignments(arguments.override), allow_dirty=arguments.allow_dirty,
                        environment=_assignments(arguments.env), cpus=arguments.cpus,
-                       timeout=arguments.timeout, label=arguments.label)
+                       timeout=arguments.timeout, label=arguments.label,
+                       backend=arguments.backend, hyperfine=arguments.hyperfine)
             snapshot = load(path)
             print(json.dumps({"snapshot": str(path), "status": snapshot["status"], "id": snapshot["id"]}))
             return 0 if snapshot["status"] == "completed" else 1
+        elif arguments.command == "variants":
+            from .variants import assemble
+            path = assemble(arguments.destination, _assignments(arguments.variant),
+                            selected_tasks=arguments.selected_tasks)
+            print(json.dumps({"suite": str(path / "suite.json"), "status": "assembled"}))
         elif arguments.command == "verify":
             inventory = verify(arguments.snapshot)
             snapshot = load(arguments.snapshot)

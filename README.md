@@ -13,8 +13,20 @@ compilation and other measurements.
 
 ## Quick start
 
-Requires Python 3.11 or later for running benchmarks and analysis, and Typst
-0.15.1 for report generation. The Python framework uses only the standard library.
+Use the Nix packages for a locked benchmark, dependencies and Hyperfine 2.0.0:
+
+```sh
+nix run .#integer-sum -- results/demo --repeats 15 --warmups 1
+nix run .#gammabench -- verify results/demo
+```
+
+See [Nix benchmarks and revision overrides](docs/nix.md). The package is built
+before measurement; timing runs execute its realized store executables. Each
+benchmark declares its operation, setup, checks and metric boundaries. The example
+measures an internal summation region as well as complete process lifetime.
+
+For direct development, use Python 3.11 or later, Hyperfine **2.0.0** on PATH and
+Typst 0.15.1. Python orchestration and analysis use only the standard library.
 
 ```sh
 python -m pip install -e .
@@ -90,7 +102,7 @@ its hash is not proof that it can still be downloaded.
 
 Start from `suites/examples/sum.json`. A command may emit a single JSON object
 on a line beginning `RESULT ` to provide application metrics and semantic
-witnesses. The runner also measures total process lifetime. Declare these
+witnesses. Pinned Hyperfine also measures total process lifetime. Declare these
 scopes independently. An explicit validation command can do expensive equivalence work before
 measurement. Otherwise tasks with checks run their normal command once as an
 untimed validation sample. Benchmark-specific physics remains in the measured engine or
@@ -99,8 +111,12 @@ its suite adapter, not in the common runner.
 ## Development
 
 ```sh
+nix develop
 PYTHONPATH=src python -m unittest discover -s tests -v
 ```
+
+This supplies the pinned Hyperfine and Typst executables used by the integration
+checks. The explicit Python backend remains available for legacy framework tests.
 
 The framework and authored adapters are MIT licensed. Fixture and third-party
 provenance is retained separately; upstream tools keep their own terms.

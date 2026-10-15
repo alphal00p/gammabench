@@ -25,7 +25,7 @@ class CliPreservationTests(unittest.TestCase):
                      'tool_ids': [], 'inputs': {}, 'expected': {'value': 1}, 'equivalence_fields': ['value']}]}
         path = self.root / 'suite.json'
         path.write_text(json.dumps(suite))
-        self.snapshot = run(path, self.root / 'snapshot', repeats=1, warmups=0)
+        self.snapshot = run(path, self.root / 'snapshot', repeats=1, warmups=0, backend='python')
 
     def invoke(self, *arguments):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):

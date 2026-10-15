@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime, timezone
+import errno
 import json
 import math
 import os
@@ -17,7 +18,8 @@ import threading
 import time
 import uuid
 
-from . import __version__
+from . import __version__, hyperfine as hyperfine_backend
+from .nix import capture_receipt, load_receipt, verify_receipt
 from .schema import SchemaError, dotted, validate_suite
 from .snapshot import seal, sha256, staging_directory, write_json
 
@@ -80,7 +82,7 @@ def _check_result(task: dict, result: dict | None, phase: str) -> dict:
 
 def _execute(task: dict, phase: str, repeat: int, staging: Path, context: dict,
              metrics: dict, environment: dict, timeout: float, cpu: int | None,
-             inputs_sha256: dict, harness_sources: dict) -> dict:
+             inputs_sha256: dict, harness_sources: dict, measurement_tool: dict | None = None) -> dict:
     relative = Path("tasks") / task["id"] / f"{phase}-{repeat:04d}"
     directory = staging / relative
     workdir = directory / "work"
@@ -100,7 +102,7 @@ def _execute(task: dict, phase: str, repeat: int, staging: Path, context: dict,
     record = {key: task[key] for key in ("case", "engine", "variant", "contract")}
     record.update(task=task["id"], phase=phase, repeat=repeat, status="failed", returncode=None,
                   duration_ns=0, metrics={}, command=command, pid=None, cpu=cpu,
-                  environment=explicit_environment, timeout_seconds=timeout,
+                  environment=explicit_environment, stdin="null", timeout_seconds=timeout,
                   started_at=datetime.now(timezone.utc).isoformat(),
                   raw={name: (relative / file).as_posix() for name, file in
                        (("stdout", "stdout.txt"), ("stderr", "stderr.txt"), ("record", "record.json"))})
@@ -110,14 +112,23 @@ def _execute(task: dict, phase: str, repeat: int, staging: Path, context: dict,
     record["workload_inputs_sha256"] = {name: inputs_sha256[name] for name in
                                         task.get("workload_inputs", list(inputs_sha256))}
     record["command_files_sha256"] = _bind_command_files(command, workdir, child_environment, staging, harness_sources)
+    measurement_tool = measurement_tool if phase != "validation" else None
+    launch = command
+    record["measurement_backend"] = "hyperfine" if measurement_tool else "python"
+    if measurement_tool:
+        export = directory / "hyperfine.json"
+        launch = hyperfine_backend.invocation(measurement_tool, command, export)
+        record.update(controller_pid=None, controller_returncode=None, controller_command=launch,
+                      duration_scope="Hyperfine controller lifetime; target wall time is in metrics.process_wall_ns",
+                      stderr_scope="benchmark and Hyperfine diagnostics")
     started = time.perf_counter_ns()
     completed_at = None
     with (directory / "stdout.txt").open("wb") as stdout, (directory / "stderr.txt").open("wb") as stderr:
         try:
-            process = subprocess.Popen(command, cwd=workdir, env=child_environment,
-                                       stdout=stdout, stderr=stderr, start_new_session=True,
+            process = subprocess.Popen(launch, cwd=workdir, env=child_environment,
+                                       stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, start_new_session=True,
                                        preexec_fn=(lambda: os.sched_setaffinity(0, {cpu})) if cpu is not None else None)
-            record["pid"] = process.pid
+            record["controller_pid" if measurement_tool else "pid"] = process.pid
             timed_out = threading.Event()
 
             def deadline() -> None:
@@ -130,7 +141,7 @@ def _execute(task: dict, phase: str, repeat: int, staging: Path, context: dict,
             timer = threading.Timer(timeout, deadline)
             timer.start()
             try:
-                record["returncode"] = process.wait()
+                record["controller_returncode" if measurement_tool else "returncode"] = process.wait()
                 completed_at = time.perf_counter_ns()
             finally:
                 timer.cancel()
@@ -140,11 +151,26 @@ def _execute(task: dict, phase: str, repeat: int, staging: Path, context: dict,
             record["reason"] = str(error)
         finally:
             record["duration_ns"] = (completed_at or time.perf_counter_ns()) - started
+    process_wall_ns = record["duration_ns"]
+    if measurement_tool:
+        if export.exists():
+            record["raw"]["hyperfine"] = (relative / "hyperfine.json").as_posix()
+        if record["status"] == "completed":
+            try:
+                measurement = hyperfine_backend.read_measurement(export, command)
+                record["returncode"] = measurement["returncode"]
+                process_wall_ns = measurement["process_wall_ns"]
+                if record["returncode"] != 0:
+                    record.update(status="failed", reason="benchmark exited with a nonzero status")
+            except (ValueError, TypeError) as error:
+                record.update(status="invalid", reason=str(error))
+        elif record["status"] == "failed" and "reason" not in record:
+            record["reason"] = "Hyperfine controller did not complete successfully"
     if record["status"] == "completed":
         try:
             result = _result(directory / "stdout.txt")
             equivalence = _check_result(task, result, phase)
-            measured = {"process_wall_ns": record["duration_ns"]}
+            measured = {"process_wall_ns": process_wall_ns}
             if phase != "validation":
                 for name, metric in metrics.items():
                     if name == "process_wall_ns":
@@ -177,8 +203,13 @@ def _bind_command_files(command: list[str], workdir: Path, environment: dict,
         candidate = Path(argument)
         if not candidate.is_absolute():
             candidate = workdir / candidate
-        if candidate.is_file():
-            candidates.append(candidate)
+        try:
+            if candidate.is_file():
+                candidates.append(candidate)
+        except OSError as error:
+            # A command argument may be source code rather than a filesystem path.
+            if error.errno != errno.ENAMETOOLONG:
+                raise
     result = {}
     for candidate in candidates:
         path = candidate.resolve()
@@ -216,9 +247,15 @@ def run(suite_path: str | Path, destination: str | Path, *, repeats: int = 15, w
         selected_tasks: list[str] | None = None, cache_dir: str | Path | None = None,
         overrides: dict | None = None, allow_dirty: bool = False,
         environment: dict[str, str] | None = None, cpus: list[int] | None = None,
-        timeout: float = 60, label: str | None = None) -> Path:
+        timeout: float = 60, label: str | None = None, backend: str = "hyperfine",
+        hyperfine: str | Path | None = None) -> Path:
     """Resolve pins, validate outputs, run serialized rounds and seal fresh evidence."""
     from . import sources
+
+    if backend not in ("hyperfine", "python"):
+        raise ValueError("measurement backend must be hyperfine or python")
+    if backend == "python" and hyperfine is not None:
+        raise ValueError("--hyperfine requires the hyperfine backend")
 
     suite_path = Path(suite_path).resolve()
     suite = validate_suite(json.loads(suite_path.read_text(encoding="utf-8")))
@@ -240,6 +277,13 @@ def run(suite_path: str | Path, destination: str | Path, *, repeats: int = 15, w
     if any(not isinstance(key, str) or not key or "=" in key or "\0" in key
            or not isinstance(value, str) or "\0" in value for key, value in environment.items()):
         raise ValueError("environment overrides must be explicit string assignments")
+    if backend == "hyperfine":
+        declared = set(environment) | {key for task in tasks for key in task.get("environment", {})}
+        reserved = declared & hyperfine_backend.RESERVED_ENVIRONMENT
+        if reserved:
+            raise SchemaError("Hyperfine reserves environment variables: " + ", ".join(sorted(reserved)))
+    measurement_tool = hyperfine_backend.resolve(hyperfine) if backend == "hyperfine" else None
+    receipt = load_receipt(suite, suite_path)
     repo = Path(__file__).resolve().parents[2]
     selected_tools = sorted({tool for task in tasks for tool in task["tool_ids"]})
     bindings = sources.resolve_tools(suite["tools"], selected_tools,
@@ -258,8 +302,23 @@ def run(suite_path: str | Path, destination: str | Path, *, repeats: int = 15, w
                 "provenance": {"suite_original_sha256": sha256(suite_path), "explicit_environment": environment,
                 "gammabench_version": __version__, "clock": "time.perf_counter_ns",
                 "process_wall_includes": "spawn, complete child lifetime and process wait",
+                "measurement_backend": measurement_tool or {"name": "python", "clock": "time.perf_counter_ns"},
                 "timeout_seconds": timeout}}
+    if measurement_tool:
+        snapshot["provenance"].update(
+            clock="Hyperfine 2.0.0 std::time::Instant",
+            record_duration_clock="time.perf_counter_ns",
+            record_duration_scope="Hyperfine controller lifetime for warmups and measurements; direct target lifetime for validation",
+            process_wall_source="Hyperfine schema 2 measurements[0].time_wall_clock; seconds converted to nanoseconds",
+            target_pid="not reported by Hyperfine; pid is null for its samples",
+            hyperfine_environment={
+                "HYPERFINE_ITERATION": "0",
+                "HYPERFINE_RANDOMIZED_ENVIRONMENT_OFFSET": {
+                    "value_recorded": False, "source": "Hyperfine randomized padding per sample"}})
     snapshot["schedule"]["pairing_id"] = snapshot["id"]
+    for section in ("unsupported", "qualification_censored"):
+        if section in suite:
+            snapshot["schedule"][section] = copy.deepcopy(suite[section])
     write_json(staging / "unsealed.json", {"status": "partial", "destination": str(Path(destination).resolve())})
     context = {"suite_dir": str(suite_path.parent), "repo": str(repo), "python": sys.executable}
     for tool, binding in bindings.items():
@@ -272,6 +331,7 @@ def run(suite_path: str | Path, destination: str | Path, *, repeats: int = 15, w
     task_input_hashes = {}
     harness_sources = {}
     try:
+        snapshot["provenance"].update(capture_receipt(receipt, staging))
         for tool, binding in bindings.items():
             if binding.get("source_archive"):
                 source = Path(binding["source_archive"])
@@ -321,12 +381,16 @@ def run(suite_path: str | Path, destination: str | Path, *, repeats: int = 15, w
                 continue
             record = _execute(task, item["phase"], item["repeat"], staging, task_contexts[task["id"]],
                               suite["metrics"], environment, task.get("timeout_seconds", timeout),
-                              cpus[index % len(cpus)] if cpus else None, task_input_hashes[task["id"]], harness_sources)
+                              cpus[index % len(cpus)] if cpus else None, task_input_hashes[task["id"]], harness_sources,
+                              measurement_tool)
             snapshot["records"].append(record)
             if record["status"] == "invalid":
                 snapshot["validation"]["tasks"][task["id"]].update(status="failed", reason=record.get("reason"))
         _validate_equivalence(snapshot, tasks, staging)
         sources.verify_tools(bindings)
+        verify_receipt(receipt)
+        if measurement_tool and sha256(Path(measurement_tool["path"])) != measurement_tool["sha256"]:
+            raise SchemaError("Hyperfine executable changed during capture")
         if sha256(suite_path) != snapshot["provenance"]["suite_original_sha256"]:
             raise SchemaError("suite changed during capture")
         _verify_inputs(staging, input_hashes)

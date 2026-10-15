@@ -18,12 +18,25 @@ jobs:
       - uses: typst-community/setup-typst@48aeee7543d37f01afd1ffb27307dc277387ba13 # v4
         with:
           typst-version: '0.15.1'
+      - uses: NixOS/nix-installer-action@62c1943b776c509394b550f3f983adc14e9212d6
+      - name: Build pinned Hyperfine
+        run: |
+          hyperfine_package=$(nix build .#hyperfine --no-link --print-out-paths)
+          echo "$hyperfine_package/bin" >> "$GITHUB_PATH"
+          echo "GAMMABENCH_HYPERFINE=$hyperfine_package/bin/hyperfine" >> "$GITHUB_ENV"
       - run: python -m pip install -e .
       - run: python -m unittest discover -s tests -v
       - run: gammabench validate suites/examples/sum.json
       - run: gammabench run suites/examples/sum.json results/demo --repeats 3 --warmups 1
       - run: gammabench verify results/demo
       - run: gammabench report results/demo --output results/report --baseline loop
+      - name: Run the packaged code-region example
+        if: matrix.python == '3.13'
+        run: |
+          nix run .#integer-sum -- results/nix-demo --repeats 3 --warmups 1
+          gammabench verify results/nix-demo
+          nix run .#rust-sort -- results/nix-sort-demo --repeats 3 --warmups 1
+          gammabench verify results/nix-sort-demo
       - name: Verify historical snapshots
         run: |
           for snapshot in snapshots/historical/*; do

@@ -36,8 +36,19 @@ of the retained original inputs. A benchmark may modify those working files
 as part of an in-place operation; its post-run files are preserved too. The
 retained original inputs and adapter sources must remain unchanged.
 Optional CPU affinity uses available CPUs and is recorded; it does not reserve
-a core. Shared-host measurements do not claim global idleness. The process
-clock is monotonic and ends when the whole child command finishes. Application
+a core. Shared-host measurements do not claim global idleness. The default process
+clock is Hyperfine 2.0.0's monotonic clock around target spawn and wait. Each
+scheduled sample invokes Hyperfine once with one run, an explicit shell-free
+command and no nested warmups, retaining the raw schema-2 JSON. Hyperfine startup
+and JSON export are outside its target clock. Controller elapsed time and PID are
+recorded separately; an unknown target PID remains null. Hyperfine diagnostics
+share the retained stderr stream with the benchmark. The explicit legacy Python
+backend preserves the former process clock for development and is identified in
+provenance; its timing implementation is not silently substituted for Hyperfine.
+
+Hyperfine exhausts one command's repetitions before moving to the next, so the
+common runner keeps the balanced schedule rather than labelling independent
+sequential series as paired rounds. Application
 clocks are emitted by the benchmark driver and have declared scopes.
 
 Timeouts terminate the sample process group and retain its raw output and

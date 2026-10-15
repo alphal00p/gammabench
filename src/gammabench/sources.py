@@ -230,11 +230,14 @@ def resolve_tools(tools: dict, selected_ids, *, cache_dir: str | Path,
     """Resolve only selected tools; unrelated backend installations are unnecessary."""
     cache, base = Path(cache_dir).resolve(), Path(base_dir or '.').resolve()
     repo = Path(repo_dir).resolve() if repo_dir else Path(__file__).resolve().parents[2]
-    cache.mkdir(parents=True, exist_ok=True)
     overrides = overrides or {}
     ids = list(dict.fromkeys(selected_ids))
     if any(name not in tools for name in ids):
         raise ValueError('Selected task references an unknown tool')
+    # Realized executable-only packages need no writable source cache. In a
+    # Nix installation the framework directory itself is immutable.
+    if any(tools[name]['kind'] in ('git', 'archive') for name in ids):
+        cache.mkdir(parents=True, exist_ok=True)
     bindings = {}
     for kind in ('git', 'archive', 'executable'):
         for name in ids:

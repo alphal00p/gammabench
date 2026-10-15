@@ -54,6 +54,11 @@ def validate_suite(value: Any) -> dict:
     _identifier(value.get("id"), "suite id")
     _text(value.get("description"), "suite description")
     suite = copy.deepcopy(value)
+    if "nix_build_receipt" in suite:
+        name = suite["nix_build_receipt"]
+        _text(name, "nix_build_receipt")
+        _require(not name.startswith("/") and ".." not in name.split("/"),
+                 "nix_build_receipt must be a suite-relative path without traversal")
     for section in ("contracts", "metrics", "tools"):
         _mapping(suite.get(section), section)
     _require(bool(suite["contracts"]), "at least one contract is required")

@@ -32,7 +32,7 @@ class RunnerTests(unittest.TestCase):
         path = self.directory / "suite.json"
         path.write_text(json.dumps(suite))
         output = run(path, self.directory / "result", repeats=kwargs.pop("repeats", 2),
-                     warmups=kwargs.pop("warmups", 1), **kwargs)
+                     warmups=kwargs.pop("warmups", 1), backend="python", **kwargs)
         return load(output)
 
     def test_balanced_rounds_are_matched_and_warmups_separate(self):
