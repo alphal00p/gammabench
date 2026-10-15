@@ -98,8 +98,6 @@
               ), entry.benchmark.title + if entry.analysis == none { " · planned" } else { "" },
             )).join())
           ]
-        } else {
-          el("p", class: "workspace-planned")[#family.title #el("span")[Planned]]
         }
       }
       #el("p", class: "workspace-registry")[#link(assets + "benchmarks.json")[Benchmark registry]]
