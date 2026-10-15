@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 import re
 import statistics
+from decimal import Decimal, Underflow, localcontext
 
 
 class InvalidMeasurements(ValueError):
@@ -20,16 +21,68 @@ class PairedGate:
     NOISE_MULTIPLIER = 3
 
     def __init__(
-        self, baseline_commit, candidate_commit, thresholds, groups, metric_families=()
+        self,
+        baseline_commit,
+        candidate_commit,
+        thresholds,
+        groups,
+        metric_families=(),
+        *,
+        correctness_format="number",
+        certified_zero=None,
     ):
         self.baseline_commit = baseline_commit
         self.candidate_commit = candidate_commit
         self.THRESHOLDS = thresholds
         self.groups = groups
         self.metric_families = metric_families
+        if correctness_format not in ("number", "decimal"):
+            raise InvalidMeasurements("Unknown correctness output format")
+        self.decimal_output = correctness_format == "decimal"
+        self.certified_zero = certified_zero
+        self.zero_bounds = {}
+        if certified_zero is not None:
+            self.fields(certified_zero, {"certificate", "components"})
+            certificate = self.fields(certified_zero["certificate"], {"id", "sha256"})
+            if not isinstance(certificate["id"], str) or not re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9_.-]*", certificate["id"]
+            ):
+                raise InvalidMeasurements("Invalid zero certificate identifier")
+            self.fingerprint(certificate["sha256"], 64)
+            components = certified_zero["components"]
+            if not isinstance(components, list) or not components:
+                raise InvalidMeasurements("A zero certificate needs component bounds")
+            for component in components:
+                self.fields(component, {"index", "absolute_bound"})
+                index = component["index"]
+                if type(index) is not int or index < 0 or index in self.zero_bounds:
+                    raise InvalidMeasurements("Invalid or repeated certified component")
+                bound = self.number(
+                    component["absolute_bound"], decimal_output=self.decimal_output
+                )
+                if bound < 0:
+                    raise InvalidMeasurements(
+                        "A certified zero bound cannot be negative"
+                    )
+                self.zero_bounds[index] = bound
 
     @staticmethod
-    def number(value: object) -> float:
+    def number(value: object, *, decimal_output=False):
+        if decimal_output:
+            if (
+                not isinstance(value, str)
+                or len(value) > 1024
+                or not re.fullmatch(
+                    r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", value
+                )
+            ):
+                raise InvalidMeasurements("Expected a finite decimal output string")
+            number = Decimal(value)
+            if not -999999 < number.adjusted() < 999999:
+                raise InvalidMeasurements(
+                    "Decimal exponent is outside the qualification range"
+                )
+            return number
         if type(value) not in (int, float):
             raise InvalidMeasurements("Expected a finite number")
         try:
@@ -87,6 +140,7 @@ class PairedGate:
             raise InvalidMeasurements("Exactly five pairs are required")
         results = {metric: [] for metric in metrics}
         mismatches = 0
+        strict_mismatches = 0
         previous_order = None
         output_size = None
         for pair in pairs:
@@ -98,8 +152,20 @@ class PairedGate:
                     "candidate",
                     "baseline_output",
                     "candidate_output",
-                },
+                }
+                | (
+                    {"baseline_certificate", "candidate_certificate"}
+                    if self.certified_zero
+                    else set()
+                ),
             )
+            if self.certified_zero and any(
+                pair[side + "_certificate"] != self.certified_zero["certificate"]
+                for side in ("baseline", "candidate")
+            ):
+                raise InvalidMeasurements(
+                    "Adapter zero certificate differs from its declared policy"
+                )
             order = pair["order"]
             if order not in ("AB", "BA") or order == previous_order:
                 raise InvalidMeasurements("Pair order must alternate AB and BA")
@@ -128,7 +194,12 @@ class PairedGate:
                             "Correctness output vectors must match in complex-point count"
                         )
                     output_size = len(values)
-                    outputs[side][method] = [self.number(value) for value in values]
+                    outputs[side][method] = [
+                        self.number(value, decimal_output=self.decimal_output)
+                        for value in values
+                    ]
+            if any(index >= output_size for index in self.zero_bounds):
+                raise InvalidMeasurements("Certified component is absent from outputs")
             baseline_reference = outputs["baseline"][reference]
             if any(
                 not any(baseline_reference[index : index + 2])
@@ -137,32 +208,45 @@ class PairedGate:
                 raise InvalidMeasurements(
                     "Every physical correctness reference point must be nonzero"
                 )
-            for side in ("baseline", "candidate"):
-                for values in outputs[side].values():
-                    pair_mismatches = sum(
-                        not math.isclose(
-                            value,
-                            own_reference,
-                            rel_tol=tolerance["relative"],
-                            abs_tol=tolerance["absolute"],
+            with localcontext() as context:
+                # Preserve the entire declared decimal input. Exponent underflow
+                # must never turn distinct nonzero components into equal zeros.
+                context.prec = 2048
+                context.traps[Underflow] = True
+                for side in ("baseline", "candidate"):
+                    for values in outputs[side].values():
+                        component_mismatches = [
+                            any(
+                                abs(value - expected)
+                                > max(
+                                    Decimal(str(tolerance["absolute"])),
+                                    Decimal(str(tolerance["relative"]))
+                                    * max(abs(value), abs(expected)),
+                                )
+                                if self.decimal_output
+                                else not math.isclose(
+                                    value,
+                                    expected,
+                                    rel_tol=tolerance["relative"],
+                                    abs_tol=tolerance["absolute"],
+                                )
+                                for expected in (own_reference, before_reference)
+                            )
+                            for value, own_reference, before_reference in zip(
+                                values, outputs[side][reference], baseline_reference
+                            )
+                        ]
+                        zero_points = sum(
+                            not any(values[index : index + 2])
+                            for index in range(0, output_size, 2)
                         )
-                        or not math.isclose(
-                            value,
-                            before_reference,
-                            rel_tol=tolerance["relative"],
-                            abs_tol=tolerance["absolute"],
-                        )
-                        for value, own_reference, before_reference in zip(
-                            values, outputs[side][reference], baseline_reference
-                        )
-                    )
-                    # Absolute tolerance must not accept a zeroed physical point.
-                    zero_points = sum(
-                        not any(values[index : index + 2])
-                        for index in range(0, output_size, 2)
-                    )
-                    mismatches += max(pair_mismatches, zero_points)
-        return results, mismatches, output_size
+                        strict_mismatches += max(sum(component_mismatches), zero_points)
+                        for index, bound in self.zero_bounds.items():
+                            # Check each side and method independently, so equal
+                            # contamination still fails. Keep the raw value intact.
+                            component_mismatches[index] = abs(values[index]) > bound
+                        mismatches += max(sum(component_mismatches), zero_points)
+        return results, mismatches, output_size, strict_mismatches
 
     def summarize(self, samples: list[tuple[float, float]], metric: str) -> dict:
         relative_limit, absolute_limit = self.THRESHOLDS[metric]
@@ -216,6 +300,8 @@ class PairedGate:
             "invalid_input": 0,
             "identity_mismatch": 0,
             "correctness_mismatches": 0,
+            "strict_correctness_mismatches": 0,
+            "certified_zero_components": len(self.zero_bounds),
             "metrics": {},
         }
         try:
@@ -276,14 +362,17 @@ class PairedGate:
             tolerance = {key: self.number(value) for key, value in tolerance.items()}
             if any(value < 0 for value in tolerance.values()):
                 raise InvalidMeasurements("Correctness tolerances cannot be negative")
-            discovery, mismatch, output_size = self.validate_phase(
+            discovery, mismatch, output_size, strict_mismatch = self.validate_phase(
                 data["discovery"], metrics, methods, reference, tolerance
             )
             report["correctness_mismatches"] = mismatch
+            report["strict_correctness_mismatches"] = strict_mismatch
             confirmation = None
             if "confirmation" in data:
-                confirmation, mismatch, confirmation_size = self.validate_phase(
-                    data["confirmation"], metrics, methods, reference, tolerance
+                confirmation, mismatch, confirmation_size, strict_mismatch = (
+                    self.validate_phase(
+                        data["confirmation"], metrics, methods, reference, tolerance
+                    )
                 )
                 if (
                     data["confirmation"]["run_id"] == data["discovery"]["run_id"]
@@ -295,6 +384,7 @@ class PairedGate:
                         "Confirmation must be an independent matched run"
                     )
                 report["correctness_mismatches"] += mismatch
+                report["strict_correctness_mismatches"] += strict_mismatch
             statuses = []
             for metric in metrics:
                 first = self.summarize(discovery[metric], metric)

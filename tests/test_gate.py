@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from gammabench.gate import qualified, run
+from gammabench.gate import qualified, run, validate_policy
 from gammabench.report import analyze
 from gammabench.snapshot import load, sha256, verify
 
@@ -135,6 +135,61 @@ Path(destination).write_text(json.dumps({"metrics": {"seconds": value},
             {item["history"]["revision"] for item in analysis["series"]},
             {"a" * 40, "b" * 40},
         )
+
+    def test_slow_budget_is_explicit_bounded_and_keeps_fast_default(self):
+        for budget in (241, 7200):
+            with self.assertRaises(ValueError):
+                validate_policy(self.policy | {"budget_seconds": budget}, self.suite)
+        slow = self.policy | {"budget_class": "slow", "budget_seconds": 7200}
+        self.assertEqual(validate_policy(slow, self.suite), slow)
+        for changed in (
+            {"budget_seconds": 7201},
+            {"budget_seconds": True},
+            {"budget_class": "unbounded"},
+        ):
+            with self.assertRaises(ValueError):
+                validate_policy(slow | changed, self.suite)
+
+    def test_decimal_certificate_outputs_are_sealed_and_requalified(self):
+        certificate = {"id": "source-zero", "sha256": "c" * 64}
+        self.policy.update(
+            correctness_format="decimal",
+            certified_zero={
+                "certificate": certificate,
+                "components": [{"index": 0, "absolute_bound": "1e-150"}],
+            },
+            correctness_tolerance={"relative": 1e-5, "absolute": 0},
+        )
+        self.adapter.write_text("""import json, sys
+from pathlib import Path
+side, destination, mode = sys.argv[1:]
+Path(destination).write_text(json.dumps({"metrics": {"seconds": 10},
+    "outputs": {"reference": ["1e-411" if side == "baseline" else "2e-411", "3e-158"]},
+    "metadata": {"precision_bits": 1000},
+    "certificate": {"id": "source-zero", "sha256": "c"*64}}))
+""")
+        status, public = self.capture()
+        self.assertEqual(status, 0)
+        snapshot = load(public / "discovery")
+        self.assertTrue(qualified(snapshot))
+        self.assertEqual(
+            snapshot["records"][0]["result"]["outputs"]["reference"],
+            ["1e-411", "3e-158"],
+        )
+        report = snapshot["provenance"]["ci_gate"]["report"]
+        self.assertEqual(report["strict_correctness_mismatches"], 5)
+        verify(public / "discovery")
+        snapshot["records"][0]["result"]["certificate"]["sha256"] = "d" * 64
+        self.assertFalse(qualified(snapshot))
+
+    def test_correctness_failure_does_not_skip_required_timing_confirmation(self):
+        self.adapter.write_text(
+            self.adapter.read_text().replace('mode == "slow"', 'mode == "wrong"')
+        )
+        status, public = self.capture("wrong")
+        self.assertEqual(status, 1)
+        self.assertTrue((public / "confirmation").exists())
+        self.assertFalse(qualified(load(public / "confirmation")))
 
     def test_regression_confirms_independently_without_pooling_rounds(self):
         status, public = self.capture("slow")

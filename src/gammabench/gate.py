@@ -30,12 +30,15 @@ def validate_policy(policy, suite):
     if policy.get("schema_version") != 1 or policy.get("pairs") != 5:
         raise SchemaError("A CI gate requires policy schema 1 and five pairs")
     budget = policy.get("budget_seconds")
+    budget_class = policy.get("budget_class", "fast")
+    if budget_class not in ("fast", "slow"):
+        raise SchemaError("Unknown gate budget class")
     if (
         type(budget) not in (int, float)
         or not math.isfinite(budget)
-        or not 0 < budget <= 240
+        or not 0 < budget <= (7200 if budget_class == "slow" else 240)
     ):
-        raise SchemaError("Gate budget must be positive and at most 240 seconds")
+        raise SchemaError("Gate budget exceeds its declared fast/slow limit")
     thresholds = policy.get("thresholds", {})
     if not thresholds or set(thresholds) != set(suite["metrics"]):
         raise SchemaError("Every gate metric requires a threshold")
@@ -85,18 +88,31 @@ def validate_policy(policy, suite):
             str(suite.get("gate", {}).get(side, {}).get("commit", ""))
         ):
             raise SchemaError("Gate subjects require complete measured commits")
+    # Validate opt-in numeric/certificate contracts before starting any adapter.
+    try:
+        comparator(policy, suite["gate"])
+    except ValueError as error:
+        raise SchemaError(str(error)) from error
     return policy
 
 
-def numeric_tree(value):
+def numeric_tree(value, *, decimal_output=False):
     """The adapter's public evidence cannot contain arbitrary process strings."""
     if isinstance(value, dict):
         return all(
-            isinstance(k, str) and IDENTIFIER.fullmatch(k) and numeric_tree(v)
+            isinstance(k, str)
+            and IDENTIFIER.fullmatch(k)
+            and numeric_tree(v, decimal_output=decimal_output)
             for k, v in value.items()
         )
     if isinstance(value, list):
-        return all(numeric_tree(v) for v in value)
+        return all(numeric_tree(v, decimal_output=decimal_output) for v in value)
+    if decimal_output:
+        try:
+            PairedGate.number(value, decimal_output=True)
+            return True
+        except ValueError:
+            return False
     return type(value) in (int, float) and math.isfinite(value)
 
 
@@ -137,6 +153,8 @@ def comparator(policy, identity):
         policy["thresholds"],
         policy["output_groups"],
         policy.get("metric_families", []),
+        correctness_format=policy.get("correctness_format", "number"),
+        certified_zero=policy.get("certified_zero"),
     )
 
 
@@ -166,6 +184,8 @@ def phase_pairs(snapshot):
         for row in rows:
             pair[row["variant"]] = row["metrics"]
             pair[row["variant"] + "_output"] = row["result"]["outputs"]
+            if "certificate" in row["result"]:
+                pair[row["variant"] + "_certificate"] = row["result"]["certificate"]
         pairs.append(pair)
     return {
         "run_id": 1 if snapshot["provenance"]["ci_gate"]["phase"] == "discovery" else 2,
@@ -178,7 +198,7 @@ def qualified(snapshot):
         info = snapshot["provenance"]["ci_gate"]
         policy = info["policy"]
         comparator(policy, info["identity"]).validate_identity(info["identity"], {})
-        _, mismatches, _ = comparator(policy, info["identity"]).validate_phase(
+        _, mismatches, _, _ = comparator(policy, info["identity"]).validate_phase(
             phase_pairs(snapshot),
             list(policy["thresholds"]),
             policy["output_groups"],
@@ -248,7 +268,7 @@ def run(suite_path, destination, *, policy_path, private_work_dir, label=None):
     deadline = time.monotonic() + policy["budget_seconds"]
     for phase, first in (("discovery", "AB"), ("confirmation", "BA")):
         if phase == "confirmation" and not (
-            report["status"] == 2 and report["confirmation_required"]
+            not report["invalid_input"] and report["confirmation_required"]
         ):
             break
         target = destination / phase
@@ -349,11 +369,28 @@ def run(suite_path, destination, *, policy_path, private_work_dir, label=None):
                         os.environ | task.get("environment", {}),
                     )
                     value = json.loads((work / "result.json").read_text())
-                    if set(value) != {
+                    fields = {
                         "metrics",
                         "outputs",
                         "metadata",
-                    } or not numeric_tree(value):
+                    }
+                    certificate = (policy.get("certified_zero") or {}).get("certificate")
+                    if certificate is not None:
+                        fields.add("certificate")
+                    if (
+                        set(value) != fields
+                        or not numeric_tree(value["metrics"])
+                        or not numeric_tree(value["metadata"])
+                        or not numeric_tree(
+                            value["outputs"],
+                            decimal_output=policy.get("correctness_format")
+                            == "decimal",
+                        )
+                        or (
+                            certificate is not None
+                            and value["certificate"] != certificate
+                        )
+                    ):
                         raise ValueError("invalid numeric adapter output")
                     if set(value["metrics"]) != set(policy["thresholds"]):
                         raise ValueError("missing gate metric")
