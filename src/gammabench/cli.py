@@ -49,6 +49,12 @@ def _parser() -> argparse.ArgumentParser:
                          help="process measurement backend (default: pinned Hyperfine 2.0.0)")
     execute.add_argument("--hyperfine", type=Path, help="Hyperfine 2.0.0 executable")
     _pins(execute)
+    gate = subcommands.add_parser("gate", help="run a paired CI gate and seal numeric evidence")
+    gate.add_argument("suite", type=Path)
+    gate.add_argument("destination", type=Path)
+    gate.add_argument("--policy", required=True, type=Path)
+    gate.add_argument("--private-work-dir", required=True, type=Path)
+    gate.add_argument("--label")
     variants = subcommands.add_parser("variants", help="assemble realized package revisions for paired measurement")
     variants.add_argument("destination", type=Path)
     variants.add_argument("--variant", action="append", required=True, metavar="LABEL=PACKAGE")
@@ -102,6 +108,10 @@ def main(argv: list[str] | None = None) -> int:
             snapshot = load(path)
             print(json.dumps({"snapshot": str(path), "status": snapshot["status"], "id": snapshot["id"]}))
             return 0 if snapshot["status"] == "completed" else 1
+        elif arguments.command == "gate":
+            from .gate import run
+            return run(arguments.suite, arguments.destination, policy_path=arguments.policy,
+                       private_work_dir=arguments.private_work_dir, label=arguments.label)
         elif arguments.command == "variants":
             from .variants import assemble
             path = assemble(arguments.destination, _assignments(arguments.variant),

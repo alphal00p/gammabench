@@ -17,6 +17,11 @@ identity, signs, symmetry factors, routing or full object equivalence.
 A suite may need a dedicated exact cross-engine validator. Failed or absent
 qualification produces a suppressed comparison, not a successful speedup.
 Imported studies preserve their original gate proof rather than rerunning it.
+CI gate suites may instead declare numerical tolerances and reference output
+groups. Their retained proof covers only the explicitly measured pair, is
+recomputed from its numeric records, and is labelled numerical qualification.
+It does not establish exact symbolic identity or cross-capture pairing. See
+[CI gates](ci.md).
 
 ## Versioned tools
 

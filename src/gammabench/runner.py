@@ -261,6 +261,8 @@ def run(suite_path: str | Path, destination: str | Path, *, repeats: int = 15, w
 
     suite_path = Path(suite_path).resolve()
     suite = validate_suite(json.loads(suite_path.read_text(encoding="utf-8")))
+    if suite.get("runner") == "paired-gate-v1":
+        raise SchemaError("Use gammabench gate for a paired-gate-v1 suite")
     if suite.get("archived_only"):
         raise SchemaError("historical suites cannot be executed; select a pinned runnable suite")
     requested = selected_tasks or [task["id"] for task in suite["tasks"]]

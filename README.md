@@ -13,6 +13,12 @@ The framework is generic: graph generation is the first suite, and the same
 protocol can host integration, symbolic algebra, tensor contraction, drawing,
 compilation and other measurements.
 
+GammaLoop CI uses `gammabench gate` for fresh paired performance checks. Main
+captures join the benchmark history; premerge captures have separate
+[PR previews](https://alphal00p.github.io/gammabench/previews/). See the
+[CI gate and publication protocol](docs/ci.md) for local execution, private
+adapter outputs, publishing credentials, and recovery.
+
 ## Quick start
 
 Use the Nix packages for a locked benchmark, dependencies and Hyperfine 2.0.0:

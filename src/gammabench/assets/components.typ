@@ -39,6 +39,7 @@
       ]
       #el("nav", class: "portal-nav", attrs: ("aria-label": "Primary"))[
         #link(home)[Explore]
+        #link("https://alphal00p.github.io/gammabench/previews/")[PR previews]
         #link("https://alphal00p.github.io/gammaloop/")[GammaLoop]
         #link("https://github.com/alphal00p/gammabench/blob/main/docs/protocol.md")[Protocol]
       ]
