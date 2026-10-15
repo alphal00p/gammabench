@@ -165,6 +165,80 @@ class ExplorerQueryTests(unittest.TestCase):
           assert.equal(sections.flatMap(s=>s.fields).length,16);
         """)
 
+    def test_suggestion_values_are_observed_declared_tags_or_enums_only(self):
+        self.check_js("""
+          fields.find(f=>f.id==='tags').values.push('unused-taxonomy-value');
+          catalog.cases[0].metadata.topic='unbounded-observed-text';
+          fields.push({id:'cache',label:'Cache',type:'enum',scope:'capture',values:['cold','warm']});
+          catalog.cases[0].metadata.cache='warm';
+          catalog.cases[0].captures[0].metadata.cache='cold';
+          const index=E.suggestionIndex(catalog);
+          assert.ok(index.some(s=>s.kind==='value'&&s.field==='tags'&&s.value==='kernel'));
+          assert.ok(index.some(s=>s.kind==='value'&&s.field==='cache'&&s.value==='cold'));
+          assert.ok(!index.some(s=>s.kind==='value'&&['unused-taxonomy-value','unbounded-observed-text','warm'].includes(s.value)));
+          assert.ok(index.some(s=>s.kind==='field'&&s.field==='memory'));
+        """)
+
+    def test_suggestion_ranking_is_deterministic_bounded_and_empty_without_a_token(self):
+        self.check_js("""
+          for(let i=0;i<12;i++)fields.push({id:'x.match.'+i,label:'Match '+String(i).padStart(2,'0'),type:'text',scope:'workload'});
+          fields.find(f=>f.id==='operation').values.push('match');
+          catalog.cases[0].metadata.operation='match';
+          const index=E.suggestionIndex(catalog);
+          const choices=E.suggestions('earlier match',index);
+          assert.equal(choices.length,8);
+          assert.equal(choices[0].kind,'value');
+          assert.equal(choices[0].value,'match');
+          assert.deepEqual(choices,E.suggestions('earlier match',[...index].reverse()));
+          assert.equal(E.suggestions('match',index,100).length,8);
+          assert.deepEqual(E.suggestions('',index),[]);
+          assert.deepEqual(E.suggestions('   ',index),[]);
+          assert.deepEqual(E.suggestions('match ',index),[]);
+          assert.ok(E.suggestions('atc',index).length);
+        """)
+
+    def test_suggestion_selection_consumes_only_final_token_and_preserves_typed_filter(self):
+        self.check_js("""
+          const original=state([],'QCD  scalar kernel');
+          const before=JSON.stringify(original);
+          const suggestion=E.suggestions(original.query,E.suggestionIndex(catalog)).find(s=>s.field==='tags'&&s.kind==='value');
+          const result=E.applySuggestion(original,suggestion,fields);
+          assert.equal(result.state.query,'QCD  scalar');
+          assert.deepEqual(result.state.filters,[{field:'tags',op:'contains',value:'kernel'}]);
+          assert.equal(JSON.stringify(original),before);
+          const changed=E.applySuggestion({...original,query:'different text'},suggestion,fields);
+          assert.ok(changed.error);
+          assert.ok(!changed.state);
+        """)
+
+    def test_suggestion_deduplication_and_limit_never_consume_a_rejected_token(self):
+        self.check_js("""
+          const original=state(Array.from({length:20},(_,i)=>({field:'note',op:'contains',value:'note'+i})),'prior kernel');
+          const suggestion=E.suggestions(original.query,E.suggestionIndex(catalog)).find(s=>s.kind==='value'&&s.field==='tags');
+          const rejected=E.applySuggestion(original,suggestion,fields);
+          assert.ok(rejected.error);
+          assert.ok(!rejected.state);
+          assert.equal(original.query,'prior kernel');
+          original.filters[0]={field:'tags',op:'contains',value:'kernel'};
+          const duplicate=E.applySuggestion(original,suggestion,fields);
+          assert.equal(duplicate.state.filters.length,20);
+          assert.equal(duplicate.state.query,'prior');
+          assert.equal(duplicate.state.filters,original.filters);
+        """)
+
+    def test_field_suggestion_stages_token_consumption_and_invalid_queries_stay_closed(self):
+        self.check_js("""
+          const original=state([],'QCD loops');
+          const suggestion=E.suggestions(original.query,E.suggestionIndex(catalog)).find(s=>s.kind==='field'&&s.field==='loops');
+          const result=E.applySuggestion(original,suggestion,fields);
+          assert.equal(result.field,'loops');
+          assert.deepEqual(result.pending,{query:'QCD loops',prefix:'QCD'});
+          assert.equal(original.query,'QCD loops');
+          assert.equal(original.filters.length,0);
+          assert.ok(E.applySuggestion({...original,errors:['Invalid saved filter']},suggestion,fields).error);
+          assert.ok(E.applySuggestion(state([],'kernel'),{query:'kernel',kind:'value',field:'tags',value:'not-declared'},fields).error);
+        """)
+
     def test_benchmark_and_case_identity_does_not_collide(self):
         self.check_js("""
           assert.notEqual(E.identity({benchmark_id:'one:two',case_id:'three'}),E.identity({benchmark_id:'one',case_id:'two:three'}));
@@ -216,6 +290,9 @@ class ExplorerPresentationTests(unittest.TestCase):
         rendered, parsed = self.compile(catalog)
         self.assertEqual(parsed.catalog, catalog)
         self.assertEqual(parsed.scripts, [])
+        self.assertIn('role="combobox"', rendered)
+        self.assertIn('role="listbox"', rendered)
+        self.assertIn('aria-controls="explorer-suggestions"', rendered)
         self.assertIn('../../benchmarks/kernel-suite/index.html?case=construct&tab=compare', parsed.links)
         self.assertIn('No captures', rendered)
         self.assertIn('Search and filters need JavaScript', rendered)

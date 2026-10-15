@@ -161,7 +161,9 @@ in `src/gammabench/assets/theme/`.
 
 The landing page is a generic benchmark explorer. Keywords search case names,
 descriptions and metadata; **Add filter** offers declared fields and typed
-conditions. Filter chips, grouping and query URLs work across benchmark families.
+conditions. Typing also suggests controlled tags, values and fields; choosing a
+value adds a filter, while choosing a field opens its value control. Filter chips,
+grouping and query URLs work across benchmark families.
 Capture conditions always match the same retained configuration. Unknown and
 not-applicable values remain distinct. The registered framework examples are
 clearly labelled and have no published captures until measurements are registered.

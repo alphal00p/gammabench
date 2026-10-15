@@ -14,10 +14,22 @@
     ]
     #el("div", attrs: (id: "explorer-controls", hidden: ""))[
       #el("label", class: "explorer-search-label", attrs: ("for": "explorer-keywords"))[Keywords]
-      #el("input", class: "explorer-search", attrs: (
-        id: "explorer-keywords", type: "search", autocomplete: "off", maxlength: "500",
-        placeholder: "Search benchmarks, workloads and metadata…",
-      ))[]
+      #el("div", class: "explorer-search-area")[
+        #el("input", class: "explorer-search", attrs: (
+          id: "explorer-keywords", type: "search", autocomplete: "off", maxlength: "500",
+          role: "combobox", "aria-autocomplete": "list", "aria-haspopup": "listbox",
+          "aria-controls": "explorer-suggestions", "aria-expanded": "false",
+          "aria-describedby": "explorer-suggestion-help",
+          placeholder: "Search benchmarks, workloads and metadata…",
+        ))[]
+        #el("ul", class: "explorer-suggestions", attrs: (
+          id: "explorer-suggestions", role: "listbox", "aria-label": "Tags, values and fields", hidden: "",
+        ))[]
+      ]
+      #el("span", class: "explorer-visually-hidden", attrs: (id: "explorer-suggestion-help"))[
+        Type to suggest declared tags, values and fields. Use arrow keys to select, Enter to choose, and Escape to dismiss. Keywords can also remain plain text.
+      ]
+      #el("p", class: "explorer-suggestion-feedback", attrs: (id: "explorer-suggestion-feedback", role: "status", hidden: ""))[]
       #el("div", class: "explorer-query-row")[
         #el("div", class: "explorer-chips", attrs: (id: "explorer-chips", "aria-label": "Active filters"))[]
         #el("button", class: "explorer-button", attrs: (

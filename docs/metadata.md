@@ -7,6 +7,14 @@ type. All filters and keyword terms must match one case and one retained
 configuration. A revision from one capture cannot satisfy a query alongside a
 thread count from another.
 
+While typing, the search suggests declared fields and controlled tag/enum values
+present in the catalog.
+Selecting a value adds a structured filter; selecting a field opens its typed
+editor. The final search term is consumed when the filter is applied, preserving
+earlier keyword terms; cancelling the editor preserves the original search.
+Arrow keys navigate suggestions, Enter selects and Escape dismisses them.
+Free keyword searches remain available.
+
 The same query can be grouped by any declared field. Grouping changes
 presentation; it does not authorize comparisons. Search, filters and grouping
 are retained in the URL. Existing benchmark/case links and older root links

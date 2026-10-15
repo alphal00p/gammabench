@@ -106,6 +106,56 @@ const GammabenchExplorer = (() => {
     }
     return sections;
   }
+  const sameFilter = (left, right) => left.field === right.field && left.op === right.op && JSON.stringify(left.value) === JSON.stringify(right.value);
+  function finalTerm(query) {
+    const match = /\S+$/.exec(query);
+    return match ? {token: match[0], prefix: query.slice(0, match.index).trimEnd()} : null;
+  }
+  function suggestionIndex(catalog) {
+    const index = [];
+    for (const field of catalog.fields) {
+      index.push({key: 'field:' + field.id, kind: 'field', field: field.id, label: field.label, detail: field.id + ' · ' + field.type});
+      if (!['enum', 'tags'].includes(field.type) || !Array.isArray(field.values)) continue;
+      const observed = new Set();
+      for (const item of catalog.cases) for (const capture of item.captures.length ? item.captures : [null]) {
+        const value = read(item, capture, field);
+        for (const entry of Array.isArray(value) ? value : [value]) if (typeof entry === 'string') observed.add(entry);
+      }
+      for (const value of new Set(field.values)) if (observed.has(value)) index.push({
+        key: JSON.stringify([field.id, value]), kind: 'value', field: field.id, value, label: value,
+        detail: (field.type === 'tags' ? 'Tag' : 'Value') + ' · ' + field.label,
+      });
+    }
+    return index;
+  }
+  function suggestions(query, index, limit = 8) {
+    const term = finalTerm(query);
+    if (!term) return [];
+    const token = term.token.toLowerCase();
+    const rank = text => {
+      text = text.toLowerCase();
+      return text === token ? 0 : text.startsWith(token) ? 1 : text.split(/[\s._-]+/).some(word => word.startsWith(token)) ? 2 : text.includes(token) ? 3 : Infinity;
+    };
+    const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+    return index.map(item => ({...item, rank: Math.min(rank(item.label), item.kind === 'field' ? rank(item.field) : Infinity)}))
+      .filter(item => Number.isFinite(item.rank))
+      .sort((a, b) => a.rank - b.rank || (a.kind === b.kind ? 0 : a.kind === 'value' ? -1 : 1) ||
+        compare(a.label.toLowerCase(), b.label.toLowerCase()) || compare(a.key, b.key))
+      .slice(0, Math.max(0, Math.min(8, limit))).map(item => ({...item, query, prefix: term.prefix}));
+  }
+  function applySuggestion(state, suggestion, fields) {
+    if (state.errors?.length) return {error: 'Clear the invalid saved query before adding a suggestion.'};
+    const term = finalTerm(state.query);
+    if (!term || !suggestion || suggestion.query !== state.query) return {error: 'The search changed. Choose a current suggestion.'};
+    const field = fields.find(field => field.id === suggestion.field);
+    if (!field) return {error: 'This field is unavailable.'};
+    if (suggestion.kind === 'field') return {field: field.id, pending: {query: state.query, prefix: term.prefix}};
+    const filter = {field: field.id, op: field.type === 'tags' ? 'contains' : 'eq', value: suggestion.value};
+    if (suggestion.kind !== 'value' || !['enum', 'tags'].includes(field.type) || !validFilter(filter, fields)) return {error: 'This value is not a declared tag or enum choice.'};
+    const duplicate = state.filters.some(existing => sameFilter(existing, filter));
+    if (!duplicate && state.filters.length >= 20) return {error: 'At most 20 filters are supported. Remove a filter first.'};
+    return {state: {...state, query: term.prefix, filters: duplicate ? state.filters : [...state.filters, filter]}};
+  }
   function decode(search, fields) {
     const params = new URLSearchParams(search), errors = [];
     const query = params.get('q') || '', group = params.get('group') || 'none';
@@ -128,7 +178,7 @@ const GammabenchExplorer = (() => {
     if (state.group !== 'none') params.set('group', state.group);
     return params.toString();
   }
-  return {unknown, notApplicable, identity, read, units, quantity, operators, validFilter, matches, matching, display, grouped, inspectorSections, decode, encode};
+  return {unknown, notApplicable, identity, read, units, quantity, operators, validFilter, matches, matching, display, grouped, inspectorSections, sameFilter, finalTerm, suggestionIndex, suggestions, applySuggestion, decode, encode};
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = GammabenchExplorer;
@@ -152,7 +202,7 @@ if (typeof document !== 'undefined') {
       const destination = new URL(href(legacy)); destination.search = location.search; destination.hash = location.hash;
       if (destination.pathname !== location.pathname) { location.replace(destination.href); return; }
     }
-    let state = E.decode(location.search, fields), selected = null, editing = null;
+    let state = E.decode(location.search, fields), selected = null, editing = null, pendingSuggestion = null;
     let editor = {field: fields[0]?.id, op: 'eq', value: undefined};
     const notice = byId('notice'), builder = byId('builder'), fieldSelect = byId('field'), opSelect = byId('operator'), slot = byId('value-slot');
     byId('controls').hidden = false; byId('group-label').hidden = false;
@@ -214,6 +264,60 @@ if (typeof document !== 'undefined') {
       if (group.children.length) fieldSelect.append(group);
     }
     byId('group').innerHTML = '<option value="none">None</option>' + fields.map(field => `<option value="${escape(field.id)}">${escape(field.label)}</option>`).join('');
+    const keywords = byId('keywords'), suggestionList = byId('suggestions'), feedback = byId('suggestion-feedback');
+    const suggestionIndex = E.suggestionIndex(catalog);
+    let currentSuggestions = [], activeSuggestion = -1, composing = false;
+    function closeSuggestions() {
+      currentSuggestions = []; activeSuggestion = -1; suggestionList.hidden = true; suggestionList.replaceChildren();
+      keywords.setAttribute('aria-expanded', 'false'); keywords.removeAttribute('aria-activedescendant');
+    }
+    function highlightSuggestion(index) {
+      activeSuggestion = index;
+      for (const [position, option] of [...suggestionList.children].entries()) option.setAttribute('aria-selected', String(position === index));
+      const option = suggestionList.children[index];
+      if (option) { keywords.setAttribute('aria-activedescendant', option.id); option.scrollIntoView({block: 'nearest'}); }
+      else keywords.removeAttribute('aria-activedescendant');
+    }
+    function refreshSuggestions() {
+      closeSuggestions();
+      if (composing || state.errors.length || document.activeElement !== keywords || keywords.selectionStart !== keywords.value.length || keywords.selectionEnd !== keywords.value.length) return;
+      currentSuggestions = E.suggestions(state.query, suggestionIndex);
+      if (!currentSuggestions.length) return;
+      suggestionList.innerHTML = currentSuggestions.map((suggestion, index) => `<li id="explorer-suggestion-${index}" role="option" aria-selected="false" aria-posinset="${index + 1}" aria-setsize="${currentSuggestions.length}" data-suggestion="${index}"><span>${escape(suggestion.label)}</span><span class="explorer-suggestion-kind">${escape(suggestion.kind === 'field' ? 'Field · ' + suggestion.detail : suggestion.detail)}</span></li>`).join('');
+      suggestionList.hidden = false; keywords.setAttribute('aria-expanded', 'true');
+    }
+    function acceptSuggestion(index) {
+      const action = E.applySuggestion(state, currentSuggestions[index], fields);
+      closeSuggestions(); feedback.hidden = !action.error; feedback.textContent = action.error || '';
+      if (action.error) return;
+      if (action.field) {
+        editing = null; pendingSuggestion = action.pending; defaultEditor(fieldMap.get(action.field)); openEditor(true); renderEditor();
+        fieldSelect.focus(); builder.scrollIntoView({block: 'nearest'});
+      } else {
+        pendingSuggestion = null; state = action.state; render(); remember(); keywords.focus(); closeSuggestions();
+        keywords.setSelectionRange(state.query.length, state.query.length);
+      }
+    }
+    suggestionList.addEventListener('pointerdown', event => { if (event.target.closest('[data-suggestion]')) event.preventDefault(); });
+    suggestionList.addEventListener('pointermove', event => { const option = event.target.closest('[data-suggestion]'); if (option) highlightSuggestion(Number(option.dataset.suggestion)); });
+    suggestionList.addEventListener('click', event => { const option = event.target.closest('[data-suggestion]'); if (option) acceptSuggestion(Number(option.dataset.suggestion)); });
+    keywords.addEventListener('focus', refreshSuggestions);
+    keywords.addEventListener('click', refreshSuggestions);
+    keywords.addEventListener('blur', closeSuggestions);
+    keywords.addEventListener('compositionstart', () => { composing = true; closeSuggestions(); });
+    keywords.addEventListener('compositionend', () => { composing = false; refreshSuggestions(); });
+    keywords.addEventListener('keyup', event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) refreshSuggestions(); });
+    keywords.addEventListener('keydown', event => {
+      if (event.isComposing || composing) return;
+      if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
+        event.preventDefault(); if (suggestionList.hidden) refreshSuggestions();
+        if (currentSuggestions.length) highlightSuggestion(activeSuggestion < 0 ? event.key === 'ArrowDown' ? 0 : currentSuggestions.length - 1 :
+          (activeSuggestion + (event.key === 'ArrowDown' ? 1 : -1) + currentSuggestions.length) % currentSuggestions.length);
+      } else if (event.key === 'Enter') {
+        event.preventDefault(); if (!suggestionList.hidden && activeSuggestion >= 0) acceptSuggestion(activeSuggestion); else closeSuggestions();
+      } else if (event.key === 'Escape') { event.preventDefault(); closeSuggestions(); }
+      else if (event.key === 'Tab') closeSuggestions();
+    });
     const filterLabel = filter => {
       const field = fieldMap.get(filter.field), op = E.operators(field).find(([op]) => op === filter.op)[1];
       return `${field.label} ${op}${['has', 'missing', 'na'].includes(filter.op) ? '' : ' ' + E.display(filter.value, field)}`;
@@ -250,8 +354,8 @@ if (typeof document !== 'undefined') {
         const field = fieldMap.get(button.dataset.inspectField), section = sections[Number(button.dataset.inspectSection)], value = E.read(row.item, section.capture, field);
         const filter = {field: field.id, op: E.unknown(value) ? 'missing' : E.notApplicable(value) ? 'na' : Array.isArray(value) ? 'contains' : 'eq'};
         if (!['missing', 'na'].includes(filter.op)) filter.value = Array.isArray(value) ? value[0] : value;
-        if (state.filters.length < 20 && E.validFilter(filter, fields) && !state.filters.some(existing => JSON.stringify(existing) === JSON.stringify(filter))) state.filters.push(filter);
-        state.errors = []; render(); remember();
+        if (state.filters.length < 20 && E.validFilter(filter, fields) && !state.filters.some(existing => E.sameFilter(existing, filter))) state.filters.push(filter);
+        pendingSuggestion = null; state.errors = []; render(); remember();
       });
     }
     function render() {
@@ -259,8 +363,8 @@ if (typeof document !== 'undefined') {
       notice.hidden = !state.errors.length; notice.textContent = state.errors.join(' ');
       byId('add').disabled = fields.length === 0 || state.errors.length > 0; byId('group').disabled = state.errors.length > 0;
       byId('chips').innerHTML = state.filters.map((filter, index) => `<span class="explorer-chip"><button type="button" data-edit-filter="${index}" aria-label="Edit filter: ${escape(filterLabel(filter))}">${escape(filterLabel(filter))}</button><button type="button" class="explorer-chip-remove" data-remove-filter="${index}" aria-label="Remove filter: ${escape(filterLabel(filter))}">×</button></span>`).join('');
-      for (const button of byId('chips').querySelectorAll('[data-remove-filter]')) button.addEventListener('click', () => { state.filters.splice(Number(button.dataset.removeFilter), 1); editing = null; renderEditor(); render(); remember(); });
-      for (const button of byId('chips').querySelectorAll('[data-edit-filter]')) button.addEventListener('click', () => { editing = Number(button.dataset.editFilter); const filter = state.filters[editing]; editor = {field: filter.field, op: filter.op, value: filter.value}; openEditor(true); renderEditor(); });
+      for (const button of byId('chips').querySelectorAll('[data-remove-filter]')) button.addEventListener('click', () => { state.filters.splice(Number(button.dataset.removeFilter), 1); pendingSuggestion = null; editing = null; renderEditor(); render(); remember(); });
+      for (const button of byId('chips').querySelectorAll('[data-edit-filter]')) button.addEventListener('click', () => { pendingSuggestion = null; closeSuggestions(); editing = Number(button.dataset.editFilter); const filter = state.filters[editing]; editor = {field: filter.field, op: filter.op, value: filter.value}; openEditor(true); renderEditor(); });
       const rows = E.matching(catalog, state), cases = rows.filter(row => row.item.case_id !== null).length, planned = rows.length - cases;
       const count = rows.reduce((sum, row) => sum + row.contexts.filter(Boolean).length, 0);
       byId('count').textContent = `${cases} matching case${cases === 1 ? '' : 's'}${planned ? ` · ${planned} planned benchmark${planned === 1 ? '' : 's'}` : ''} · ${count} retained configuration${count === 1 ? '' : 's'}`;
@@ -276,11 +380,11 @@ if (typeof document !== 'undefined') {
       const row = rows.find(row => E.identity(row.item) === selected);
       if (row) inspect(row); else { selected = null; byId('inspector').hidden = true; }
     }
-    byId('keywords').addEventListener('input', event => { state.query = event.target.value; render(); remember(true); });
-    byId('add').addEventListener('click', () => { editing = null; defaultEditor(fields[0]); openEditor(builder.hidden); renderEditor(); });
-    byId('cancel').addEventListener('click', () => { editing = null; openEditor(false); });
-    byId('clear').addEventListener('click', () => { state = {query: '', filters: [], group: 'none', errors: []}; selected = editing = null; openEditor(false); render(); remember(); });
-    fieldSelect.addEventListener('change', () => { defaultEditor(fieldMap.get(fieldSelect.value)); renderEditor(); });
+    keywords.addEventListener('input', event => { pendingSuggestion = null; feedback.hidden = true; state.query = event.target.value; render(); remember(true); refreshSuggestions(); });
+    byId('add').addEventListener('click', () => { pendingSuggestion = null; closeSuggestions(); editing = null; defaultEditor(fields[0]); openEditor(builder.hidden); renderEditor(); });
+    byId('cancel').addEventListener('click', () => { const fromSuggestion = pendingSuggestion !== null; pendingSuggestion = null; editing = null; openEditor(false); if (fromSuggestion) { keywords.focus(); closeSuggestions(); } });
+    byId('clear').addEventListener('click', () => { state = {query: '', filters: [], group: 'none', errors: []}; selected = editing = pendingSuggestion = null; closeSuggestions(); feedback.hidden = true; openEditor(false); render(); remember(); });
+    fieldSelect.addEventListener('change', () => { pendingSuggestion = null; defaultEditor(fieldMap.get(fieldSelect.value)); renderEditor(); });
     opSelect.addEventListener('change', () => { const field = fieldMap.get(editor.field), value = byId('value')?.value; if (value !== undefined) editor.value = field.type === 'quantity' ? {value, unit: byId('unit').value} : value; editor.op = opSelect.value; renderEditor(); });
     builder.addEventListener('submit', event => {
       event.preventDefault(); const field = fieldMap.get(editor.field), filter = {field: field.id, op: editor.op};
@@ -288,12 +392,14 @@ if (typeof document !== 'undefined') {
         const value = byId('value')?.value;
         if (value !== undefined && value.trim() !== '') filter.value = field.type === 'number' ? Number(value) : field.type === 'quantity' ? {value: Number(value), unit: byId('unit').value} : field.type === 'boolean' ? value === 'true' : value;
       }
-      if (!E.validFilter(filter, fields) || (editing === null && state.filters.length >= 20)) { byId('error').textContent = 'Enter a valid value in the declared field type and units; at most 20 filters are supported.'; byId('error').hidden = false; return; }
-      if (editing === null) state.filters.push(filter); else state.filters[editing] = filter;
-      state.errors = []; editing = null; openEditor(false); render(); remember();
+      const duplicate = state.filters.some((existing, index) => index !== editing && E.sameFilter(existing, filter));
+      if (!E.validFilter(filter, fields) || (editing === null && !duplicate && state.filters.length >= 20)) { byId('error').textContent = 'Enter a valid value in the declared field type and units; at most 20 filters are supported.'; byId('error').hidden = false; return; }
+      if (editing === null) { if (!duplicate) state.filters.push(filter); } else if (duplicate) state.filters.splice(editing, 1); else state.filters[editing] = filter;
+      if (pendingSuggestion?.query === state.query) state.query = pendingSuggestion.prefix;
+      state.errors = []; editing = pendingSuggestion = null; openEditor(false); render(); remember();
     });
-    byId('group').addEventListener('change', () => { state.group = byId('group').value; render(); remember(); });
-    addEventListener('popstate', () => { state = E.decode(location.search, fields); selected = editing = null; openEditor(false); render(); });
+    byId('group').addEventListener('change', () => { pendingSuggestion = null; state.group = byId('group').value; render(); remember(); });
+    addEventListener('popstate', () => { state = E.decode(location.search, fields); selected = editing = pendingSuggestion = null; closeSuggestions(); feedback.hidden = true; openEditor(false); render(); });
     render();
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, {once: true}); else start();
