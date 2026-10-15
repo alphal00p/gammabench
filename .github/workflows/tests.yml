@@ -30,12 +30,17 @@ jobs:
       - run: gammabench run suites/examples/sum.json results/demo --repeats 3 --warmups 1
       - run: gammabench verify results/demo
       - run: gammabench report results/demo --output results/report --baseline loop
+      - name: Check packaged environment isolation
+        if: matrix.python == '3.13'
+        run: nix build .#checks.x86_64-linux.runtime-environment --no-link
       - name: Run the packaged code-region example
         if: matrix.python == '3.13'
         run: |
-          nix run .#integer-sum -- results/nix-demo --repeats 3 --warmups 1
+          env PYTHONHOME=/gammabench-invalid-python-home PYTHONPATH=/gammabench-invalid-python-path \
+            nix run .#integer-sum -- results/nix-demo --repeats 3 --warmups 1
           gammabench verify results/nix-demo
-          nix run .#rust-sort -- results/nix-sort-demo --repeats 3 --warmups 1
+          env PYTHONHOME=/gammabench-invalid-python-home PYTHONPATH=/gammabench-invalid-python-path \
+            nix run .#rust-sort -- results/nix-sort-demo --repeats 3 --warmups 1
           gammabench verify results/nix-sort-demo
       - name: Verify historical snapshots
         run: |

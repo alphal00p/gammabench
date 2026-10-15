@@ -51,6 +51,8 @@ let
   runner = pkgs.writeShellApplication {
     name = "bench-${name}";
     text = ''
+      # Keep ambient Python installations out of the packaged runtime.
+      unset LD_LIBRARY_PATH DYLD_LIBRARY_PATH PYTHONHOME PYTHONPATH
       if [ "$#" -lt 1 ]; then
         echo 'Usage: bench-${name} NEW-SNAPSHOT-DIRECTORY [gammabench run options]' >&2
         exit 2

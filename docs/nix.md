@@ -37,6 +37,12 @@ harness and its dependencies happens before measurement. If the operation being
 benchmarked is itself compilation, that compiler invocation belongs to its
 declared runtime metric. The snapshot destination must be new. Measurements happen at runtime, never inside a cacheable derivation.
 
+Packaged entrypoints clear inherited `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`,
+`PYTHONHOME` and `PYTHONPATH` before starting the packaged interpreter. This keeps
+host Python installations from changing its libraries or imported modules.
+Explicit suite settings and `run --env` overrides apply afterwards and remain in
+the snapshot. Other runtime variables, including private licensing, remain available.
+
 The flake locks Nixpkgs, Crane, the Rust toolchain, Hyperfine source and measured
 source inputs. Generation adapters use committed Cargo locks and offline Cargo
 builds. Dependency-manifest changes require a deliberate lock update; a source
