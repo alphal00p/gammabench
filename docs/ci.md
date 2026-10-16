@@ -74,6 +74,15 @@ including an empty selection, are saved in the URL. A point links to its origina
 comparison set. The overview uses retained values without creating new ratios
 between independent captures or rewriting any sealed evidence.
 
+A workload with one implementation has one full-size history. The shared
+comparison is shown only when at least two histories are pinned, avoiding a
+duplicate chart for a single selection. Solid lines keep matching measurement
+contexts. Dotted connectors labelled **Runner changed** show consecutive main
+captures whose only context difference is their CI host; CPU and runner image
+details appear in tooltips. These connectors describe capture order across
+hardware changes, while retained paired comparisons assess software changes.
+Input/settings changes, missing runs and failed measurements keep their gaps.
+
 PR links open this History view by default. Each preview combines the latest
 published main history with only that PR capture. Hollow diamonds and explicit
 **Proposed PR #N** labels distinguish the candidate from main commits, including

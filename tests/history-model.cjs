@@ -57,4 +57,16 @@ const otherTool = {...c, repository: 'https://github.com/other/tool'};
 assert.equal(history.latest([a], history.columns([a, otherTool])).record, a);
 const settingsGap = {...b, captureIndex: '2'};
 assert.deepEqual(history.segments([{...a, captureIndex: '0'}, settingsGap], axis).lines, []);
+// Hardware changes have an explicit dotted capture-order connector, separate
+// from the solid trend. Only the host may differ in a runner-context family.
+const amd = {...a, context: 'AMD context', runnerContext: 'same inputs and settings', runnerLabel: 'AMD EPYC'};
+const intel = {...b, context: 'Intel context', runnerContext: amd.runnerContext, runnerLabel: 'Intel Xeon'};
+assert.deepEqual(history.runnerTransitions([intel, amd], axis), [[amd, intel]]);
+assert.deepEqual(history.runnerTransitions([amd, {...intel, context: amd.context}], axis), []);
+assert.deepEqual(history.runnerTransitions([amd, {...intel, runnerContext: 'different inputs'}], axis), []);
+assert.deepEqual(history.runnerTransitions([amd, {...intel, qualified: false}], axis), []);
+assert.deepEqual(history.runnerTransitions([amd, {...intel, historyRole: 'proposed'}], axis), []);
+assert.deepEqual(history.runnerTransitions([amd, {...c, context: intel.context, runnerContext: amd.runnerContext}], axis), []);
+assert.deepEqual(history.runnerTransitions([amd, {...amd}, intel], axis), []);
+assert.deepEqual(history.runnerTransitions([amd, {...intel, createdAt: amd.createdAt}], axis), []);
 console.log('History identity, ordering, gaps, reruns, proposals and qualification passed');

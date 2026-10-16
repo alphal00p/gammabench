@@ -178,6 +178,25 @@ class HistoryViewTests(unittest.TestCase):
                 self.assertEqual(len(document.points), 2)
                 self.assertEqual(len(document.groups), 2)
 
+    def test_runner_transition_metadata_relaxes_only_the_host(self):
+        analysis = self.ci_analysis()
+        self.append_ci_capture(analysis, "new-runner", "c" * 40, "2026-10-15T12:00:00Z")
+        changed = [item for item in analysis["series"] if item["snapshot_id"] == "new-runner"]
+        for item in changed:
+            item["history"]["context"]["host"].update(cpu_model="new CPU", runner_image="new image")
+        _, document = self.compile(analysis)
+        self.assertEqual(len(document.groups), 2)
+        first, second = document.groups
+        self.assertTrue(first["data-runner-context"])
+        self.assertEqual(first["data-runner-context"], second["data-runner-context"])
+        self.assertNotEqual(first["data-runner-label"], second["data-runner-label"])
+        self.assertIn("new CPU", second["data-runner-label"])
+        # Changes to workloads/settings keep separate families even on another CPU.
+        for item in changed:
+            item["history"]["context"]["environment"]["DIFFERENT_SETTING"] = "yes"
+        _, altered = self.compile(analysis)
+        self.assertNotEqual(altered.groups[0]["data-runner-context"], altered.groups[1]["data-runner-context"])
+
     def test_proposed_candidate_is_marked_without_interrupting_main_capture_indices(self):
         analysis = self.ci_analysis()
         self.append_ci_capture(analysis, "proposal", "c" * 40, "2026-10-15T12:00:00Z")

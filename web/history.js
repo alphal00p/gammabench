@@ -89,6 +89,31 @@
     return {status: usable(record) ? 'qualified' : 'unqualified', record};
   }
 
+  function runnerTransitions(records, axis) {
+    const positions = new Map(axis.map(column => [column.key, column]));
+    const families = new Map(), transitions = [];
+    for (const record of records.filter(record => !proposed(record) && record.runnerContext)) {
+      if (!families.has(record.runnerContext)) families.set(record.runnerContext, []);
+      families.get(record.runnerContext).push(record);
+    }
+    for (const family of families.values()) {
+      family.sort((a, b) => positions.get(captureKey(a)).index - positions.get(captureKey(b)).index);
+      const counts = new Map();
+      family.forEach(record => counts.set(captureKey(record), (counts.get(captureKey(record)) || 0) + 1));
+      let previous;
+      for (const record of family) {
+        if (previous && usable(previous) && usable(record) && previous.context && record.context && previous.context !== record.context &&
+          previous.repository === record.repository && counts.get(captureKey(previous)) === 1 && counts.get(captureKey(record)) === 1 &&
+          positions.get(captureKey(record)).mainIndex === positions.get(captureKey(previous)).mainIndex + 1 && time(record) > time(previous) &&
+          (record.captureIndex === undefined || previous.captureIndex === undefined || Number(record.captureIndex) === Number(previous.captureIndex) + 1)) {
+          transitions.push([previous, record]);
+        }
+        previous = record;
+      }
+    }
+    return transitions;
+  }
+
   function format(value, unit) {
     const steps = unit === 'ns' ? [[1e9, 's'], [1e6, 'ms'], [1e3, 'µs']] : unit === 'bytes' ? [[1e9, 'GB'], [1e6, 'MB'], [1e3, 'kB']] : [];
     const [scale, label] = steps.find(([scale]) => Math.abs(value) >= scale) || [1, unit === 'bytes' ? 'B' : unit];
@@ -96,7 +121,8 @@
   }
 
   const recordsOf = group => [...group.querySelectorAll('.history-point, .history-unplotted')].map(element =>
-    ({...element.dataset, qualified: element.classList.contains('history-point'), element, group}));
+    ({...element.dataset, qualified: element.classList.contains('history-point'), element, group,
+      context: group.dataset.context, runnerContext: group.dataset.runnerContext, runnerLabel: group.dataset.runnerLabel}));
   const element = (tag, className, text) => {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -152,6 +178,14 @@
         svg.append(svgNode('line', {x1: 72, x2: width - 30, y1: y(value), y2: y(value), class: 'history-grid'}),
           svgNode('text', {x: 64, y: y(value) + 4, 'text-anchor': 'end', class: 'history-axis-label'}, format(value, unit)));
       }
+      const transitions = runnerTransitions(groups.flatMap(recordsOf), axis);
+      for (const [before, after] of transitions) {
+        const label = `Runner changed: ${before.runnerLabel} → ${after.runnerLabel}. Capture order across different hardware; consult the paired comparison to assess software changes.`;
+        const connector = svgNode('g', {class: 'history-runner-change', tabindex: '0', role: 'img', 'aria-label': label});
+        connector.append(svgNode('title', {}, label), svgNode('line', {x1: x(before), x2: x(after), y1: y(Number(before.median)), y2: y(Number(after.median)), class: 'history-runner-connector'}));
+        svg.append(connector);
+      }
+      if (transitions.length) svg.append(svgNode('text', {x: (72 + width - 30) / 2, y: 13, 'text-anchor': 'middle', class: 'history-runner-change-label'}, 'Dotted: runner changed'));
       for (const group of groups) {
         const records = recordsOf(group), color = options.color(group), style = '--history-series-color:' + color;
         const parts = segments(records, axis);
@@ -159,7 +193,7 @@
         for (const [base, record] of parts.proposals) svg.append(svgNode('line', {x1: x(base), x2: x(record), y1: y(Number(base.median)), y2: y(Number(record.median)), class: 'history-proposed-trend', style, 'data-base-commit': base.commit, 'data-proposed-commit': record.commit}));
         for (const record of records.filter(usable)) {
           const center = x(record), median = y(Number(record.median));
-          const label = `${proposed(record) ? 'Proposed PR #' + record.pr + '; ' : ''}${group.dataset.case}; ${group.dataset.label}; ${record.commit}; ${record.runId ? 'run ' + record.runId + '/' + record.runAttempt + '; ' : ''}captured ${record.createdAt}; median ${format(Number(record.median), unit)}, observed range ${format(Number(record.min), unit)} to ${format(Number(record.max), unit)}, ${record.count} samples`;
+          const label = `${proposed(record) ? 'Proposed PR #' + record.pr + '; ' : ''}${group.dataset.case}; ${group.dataset.label}; ${record.commit}; ${record.runId ? 'run ' + record.runId + '/' + record.runAttempt + '; ' : ''}captured ${record.createdAt}; median ${format(Number(record.median), unit)}, observed range ${format(Number(record.min), unit)} to ${format(Number(record.max), unit)}, ${record.count} samples${record.runnerLabel ? '; runner: ' + record.runnerLabel : ''}`;
           const open = options.open(record, group);
           const mark = svgNode('g', {class: 'history-mark', tabindex: '0', role: open ? 'button' : 'img',
             'aria-label': (open ? 'Open recorded comparison: ' : '') + label,
@@ -196,13 +230,14 @@
   function render({root, groups, allGroups, identity, labels, colors, pins, toggle, open}) {
     const axis = columns(allGroups.flatMap(recordsOf));
     const choices = [...new Set(groups.map(identity))];
+    const single = choices.length === 1;
     const container = root.querySelector('#history-workloads');
     if (!container) return;
     container.replaceChildren();
     const header = element('div', 'history-run-layout history-run-heading');
     const heading = element('div', '', 'Workload / implementation'), axisBox = element('div', 'history-run-chart'), latestLabel = element('div', 'history-latest-heading', axis.some(proposed) ? 'Proposed PR' : 'Latest run');
     header.append(heading, axisBox, latestLabel); container.append(header);
-    if (axisBox.clientWidth) {
+    if (!single && axisBox.clientWidth) {
       const svg = svgNode('svg', {viewBox: `0 0 ${axisBox.clientWidth} 48`, role: 'img', class: 'history-plot', 'aria-label': 'Shared measured commit and run columns'});
       drawAxis(svg, axis, axisBox.clientWidth, 46); axisBox.append(svg);
     }
@@ -231,9 +266,10 @@
       const button = element('button', 'history-pin', pins.has(key) ? 'Pinned' : 'Pin to compare');
       button.type = 'button'; button.dataset.historyPin = key; button.setAttribute('aria-pressed', String(pins.has(key)));
       button.setAttribute('aria-label', `${pins.has(key) ? 'Unpin' : 'Pin'} ${labels.get(key)}`);
+      button.hidden = single;
       button.addEventListener('click', () => toggle(key)); side.append(button);
       row.append(title, chart, side); container.append(row);
-      plot(chart, selected, axis, {mini: true, color: group => pins.has(key) ? colors(group) : 'var(--link)', label: labels.get(key), open});
+      plot(chart, selected, axis, {mini: !single, color: group => pins.has(key) ? colors(group) : 'var(--link)', label: labels.get(key), open});
     }
     const legend = root.querySelector('#history-visible-series'); legend.replaceChildren();
     const pinned = groups.filter(group => pins.has(identity(group)));
@@ -245,14 +281,27 @@
     }
     const count = new Set(pinned.map(identity)).size;
     const jump = root.querySelector('#history-pin-jump');
-    if (jump) jump.textContent = `Compare pinned (${count}) ↓`;
+    if (jump) {
+      jump.textContent = `Compare pinned (${count}) ↓`;
+      jump.hidden = count < 2;
+      jump.parentElement.hidden = single || !choices.length;
+    }
+    const hint = root.querySelector('#history-pin-hint');
+    if (hint) {
+      hint.hidden = count >= 2;
+      hint.textContent = count ? '1 pinned · pin another history to compare' : 'Pin two histories to compare';
+    }
+    root.querySelector('#history-pinned').hidden = count < 2;
+    const guide = root.querySelector('#history-plot-guide');
+    if (guide) guide.textContent = single ? 'Activate a point to open its recorded comparison. Dotted connectors identify runner changes; exact measurements and provenance are retained below.' :
+      'Mini charts use individual vertical scales. Pin at least two histories to compare them on one scale. Activate a point to open its recorded comparison.';
     root.querySelector('#history-pin-count').textContent = `${count} pinned · shared ${groups[0]?.dataset.unit || ''} scale · ${groups[0]?.dataset.direction === 'higher' ? 'higher' : 'lower'} is better`;
     const comparison = root.querySelector('#history-overview-chart');
-    if (pinned.length) plot(comparison, pinned, axis, {color: colors, label: 'Pinned comparison', open});
-    else comparison.replaceChildren(element('p', 'history-sparse', 'Pin workloads above to compare their histories on one scale.'));
+    if (count >= 2) plot(comparison, pinned, axis, {color: colors, label: 'Pinned comparison', open});
+    else comparison.replaceChildren();
   }
 
-  const api = {captureKey, columns, segments, latest, usable, format, render};
+  const api = {captureKey, columns, segments, runnerTransitions, latest, usable, format, render};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.GammabenchHistory = api;
 })();
