@@ -85,4 +85,24 @@ assert.equal(restored.pinReference,'b');
 assert.equal(restored.compare,true);
 assert.deepEqual(restored.evidence,[L.key(a)]);
 assert.match(L.decode('?list='+encodeURIComponent(JSON.stringify({...compact,pins:['missing']})),aliases).error,/not substituted/);
-console.log('Independent histories, stored ratios, exact pins and correlated capture filtering passed');
+
+// Sharing display context never merges snapshot/phase identity or implies pairing.
+const firstEvidence = {...a,snapshot:'snapshot-a',evidence:{snapshot:'snapshots/a/snapshot.json',suite:'snapshots/a/suite.json'}};
+const secondEvidence = {...b,snapshot:'snapshot-a',evidence:{suite:'snapshots/a/suite.json',snapshot:'snapshots/a/snapshot.json'}};
+assert.deepEqual(L.evidenceGroups([firstEvidence,secondEvidence]).map(g=>g.length),[2]);
+for(const change of [{snapshot:'snapshot-b'},{set:'confirmation'},{scope:'different clock'},{report:'other-report'},
+ {evidence:{snapshot:'snapshots/another/snapshot.json'}}])
+ assert.equal(L.evidenceGroups([firstEvidence,{...secondEvidence,...change}]).length,2);
+assert.deepEqual(L.sharedFields([{count:0,origin:'import',scope:null},{count:0,origin:'import'}],['count','origin','scope']),{count:0,origin:'import'});
+assert.equal(L.comparisonKey([a,b],a.id,'paired'),L.comparisonKey([b,a],a.id,'paired'));
+assert.notEqual(L.comparisonKey([a,b],a.id,'paired'),L.comparisonKey([a,b],b.id,'paired'));
+assert.notEqual(L.comparisonKey([a,b],a.id,'paired'),L.comparisonKey([a],a.id,'paired'));
+assert.notEqual(L.comparisonKey([a,b],a.id,'paired'),L.comparisonKey([a,b],a.id,'absolute'));
+assert.equal(L.comparisonKey([a,b],a.id,'absolute'),L.comparisonKey([a,b],b.id,'absolute'));
+assert.equal(L.observedRange({...a,min:12,max:12}), '');
+assert.equal(L.observedRange({...a,qualified:false}), '');
+assert.equal(L.observedRange({...a,min:11,max:13}), '11–13 s');
+assert.equal(L.metricTitle({metricLabel:'Whole process instructions',unit:'instructions'}),'Whole process instructions');
+assert.equal(L.metricTitle({metricLabel:'Generation time',unit:'s'}),'Generation time · s');
+
+console.log('Independent histories, stored ratios, exact pins, evidence groups and comparison identities passed');

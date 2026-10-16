@@ -12,7 +12,6 @@
   el("section", class: "benchmark-explorer", attrs: attrs)[
     #el("header", class: "explorer-heading")[
       #el("h1")[Benchmarks]
-      #el("p")[Browse independent tool histories or recorded comparisons. Pin exact measurements to compare them above the list.]
     ]
     #if model != none {
       el("section", class: "list-pinboard", attrs: (id: "list-pins", "aria-label": "Pinned measurements", hidden: ""))[]
@@ -70,11 +69,17 @@
               if view == "history" { "History" } else { "Compare" })
           }
         ]
-        el("a", attrs: (href: "#list-pins", id: "list-pin-jump"), [Pinned (0) ↑])
+        el("a", attrs: (href: "#list-pins", id: "list-pin-jump", hidden: ""), [Pinned ↑])
       }
       #el("div", attrs: (id: "explorer-group-label", hidden: ""), matrix-select("explorer-group", "Group by", []))
     ]
-    #if model != none { el("div", class: "list-scope", attrs: (id: "list-scope"))[] }
+    #if model != none {
+      el("details", class: "list-options list-help", attrs: (id: "list-help", hidden: ""))[
+        #el("summary")[Chart key]
+        #el("div", attrs: (id: "list-help-content"))[]
+      ]
+      el("div", class: "list-scope", attrs: (id: "list-scope"))[]
+    }
     #el("div", attrs: (id: "explorer-results"))[
       #if catalog.cases.len() == 0 { el("p", class: "explorer-empty")[No benchmark cases are registered yet.] }
       #if catalog.cases.len() > 0 {
