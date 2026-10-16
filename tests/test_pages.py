@@ -89,64 +89,54 @@ class PagesTests(unittest.TestCase):
         self.assertIn('data-theme-toggle', page)
         self.assertNotIn('<style>', page)
 
-    def test_registry_builds_separate_benchmark_workspaces(self):
+    def test_list_retires_benchmark_pages_and_preserves_selection_redirects(self):
+        from test_inline_list import ListElements
         registry = json.loads((ROOT / 'web/benchmarks.json').read_text())
         self.assertEqual(json.loads((self.site / 'assets/benchmarks.json').read_text()), registry)
-        self.assertTrue((self.site / 'assets/workspace.js').is_file())
-        self.assertTrue((self.site / 'assets/history.js').is_file())
         for benchmark in registry['benchmarks']:
             page = self.site / 'benchmarks' / benchmark['id'] / 'index.html'
             html = page.read_text()
-            self.assertIn(f'data-default-benchmark="{benchmark["id"]}"', html)
-            for tab in ('history', 'compare', 'evidence'):
-                self.assertIn(f'data-workspace-panel="{tab}"', html)
-            own_snapshots = set()
-            for path in benchmark['analyses']:
-                own_snapshots.update(snapshot['id'] for snapshot in json.loads((ROOT / path).read_text())['snapshots'])
-            displayed_studies = set(re.findall(r'class="history-series"[^>]*data-study="([^"]+)"', html))
-            if benchmark['analyses']:
-                self.assertTrue(displayed_studies)
-                self.assertTrue(displayed_studies <= own_snapshots)
-                self.assertTrue('id="comparison-matrix"' in html, benchmark['id'])
-            else:
-                self.assertFalse(displayed_studies)
-                self.assertIn('No measurements yet', html)
-                self.assertNotIn('class="matrix-cell"', html)
-            for other in registry['benchmarks']:
-                self.assertIn(f'data-href="../../benchmarks/{other["id"]}/index.html"', html)
+            self.assertEqual(ListElements(html).redirect,
+                             {'target': '../../index.html', 'defaults': {'benchmark': benchmark['id']}})
+            self.assertNotIn('data-workspace-panel', html)
+            self.assertNotIn('workspace-sidebar', html)
         for path in ('index.html', 'docs/results/index.html'):
-            parser = Links()
-            parser.feed((self.site / path).read_text())
-            self.assertIsNotNone(parser.catalog)
-            self.assertEqual({case['benchmark_id'] for case in parser.catalog['cases']},
+            listing = ListElements((self.site / path).read_text())
+            self.assertEqual({case['benchmark_id'] for case in listing.catalog['cases']},
                              {benchmark['id'] for benchmark in registry['benchmarks']})
-            self.assertTrue(any(not case['captures'] for case in parser.catalog['cases']))
-        for asset in ('explorer.js', 'explorer.css', 'metadata.json'):
+            self.assertTrue(any(not case['captures'] for case in listing.catalog['cases']))
+            self.assertTrue(all(case.get('tags') for case in listing.catalog['cases']))
+            self.assertLess(listing.ids.index('list-pins'), listing.ids.index('explorer-controls'))
+            self.assertLess(listing.ids.index('list-pins'), listing.ids.index('explorer-results'))
+            self.assertTrue(listing.model['records'])
+            self.assertEqual(len({r['id'] for r in listing.model['records']}), len(listing.model['records']))
+            for record in listing.model['records']:
+                for target in (record['report'], *record['evidence'].values()):
+                    resolved = (self.site / target).resolve()
+                    self.assertTrue(resolved.is_relative_to(self.site.resolve()))
+                    self.assertTrue(resolved.is_file(), target)
+        for asset in ('explorer.js', 'explorer.css', 'list.js', 'list.css', 'list-redirect.js', 'metadata.json'):
             self.assertTrue((self.site / 'assets' / asset).is_file())
 
-    def test_ci_history_uses_candidates_while_compare_and_evidence_keep_both_sides(self):
-        from test_history_view import HistoryElements
-        from test_comparison_views import Elements
+    def test_ci_history_selects_candidates_and_inline_compare_retains_both_sides(self):
+        from test_inline_list import ListElements
         registry = json.loads((ROOT / 'web/benchmarks.json').read_text())
         entries = [item for item in registry['benchmarks'] if item['family'] == 'gammaloop-ci' and item['analyses']]
+        model = ListElements((self.site / 'index.html').read_text()).model
         for entry in entries:
-            html = (self.site / 'benchmarks' / entry['id'] / 'index.html').read_text()
-            history = HistoryElements(html)
-            self.assertTrue(history.points or history.unplotted)
-            self.assertTrue(all(point['data-task'] == 'candidate' for point in history.points + history.unplotted))
-            columns = [attrs for tag, attrs in Elements(html).elements if tag == 'th' and 'data-version' in attrs]
-            roles = {json.loads(attrs['data-run'])[2] for attrs in columns}
-            self.assertTrue({'baseline', 'candidate'} <= roles)
-            self.assertIn('ci-history/index.html', html)
-        overview = (self.site / 'ci-history/index.html').read_text()
-        self.assertIn('data-multi-workload="true"', overview)
-        history = HistoryElements(overview)
-        self.assertEqual({group['data-case'] for group in history.groups}, {entry['default_case'] for entry in entries})
-        self.assertTrue(all(point.get('data-comparison-href', '').startswith('../benchmarks/') for point in history.points))
-        self.assertNotIn('id="history-case"', overview)
-        self.assertIn('id="history-workloads"', overview)
-        self.assertIn('id="history-pinned"', overview)
-        self.assertTrue(all(point.get('data-run-id') and point.get('data-run-attempt') for point in history.points))
+            retained = [r for r in model['records'] if r['benchmark'] == entry['id']]
+            history = [r for r in retained if r['history']]
+            self.assertTrue(history)
+            self.assertTrue(all(r['variant'] == 'candidate' and r['phase'] == 'discovery' for r in history))
+            self.assertTrue({'baseline', 'candidate'} <= {r['variant'] for r in retained})
+            originals = {item['id']: item for path in entry['analyses']
+                         for item in json.loads((ROOT / path).read_text())['series']}
+            for record in retained:
+                for frozen, original in (('median', 'median'), ('min', 'minimum'), ('max', 'maximum'), ('count', 'count')):
+                    self.assertEqual(record[frozen], originals[record['id']][original])
+            self.assertTrue(all(r['runId'] and r['runAttempt'] for r in history))
+        redirect = ListElements((self.site / 'ci-history/index.html').read_text()).redirect
+        self.assertEqual(redirect['defaults'], {'tag': 'gammaloop-ci', 'tab': 'history'})
 
     def test_scaffolded_benchmark_has_empty_workspace_without_fabricated_measurements(self):
         from gammabench.scaffold import create
@@ -162,13 +152,11 @@ class PagesTests(unittest.TestCase):
             destination = Path(temporary) / 'site'
             subprocess.run(['bash', str(root / 'scripts/build-pages.sh'), str(destination)],
                            check=True, capture_output=True)
+            from test_inline_list import ListElements
             page = (destination / 'benchmarks/planned-operation/index.html').read_text()
-            self.assertIn('No measurements yet', page)
-            self.assertIn('data-default-study="planned:planned-operation"', page)
-            self.assertNotIn('class="history-point"', page)
-            self.assertNotIn('class="matrix-cell"', page)
-            for tab in ('history', 'compare', 'evidence'):
-                self.assertIn(f'data-workspace-panel="{tab}"', page)
+            self.assertEqual(ListElements(page).redirect['defaults'], {'benchmark': 'planned-operation'})
+            listing = ListElements((destination / 'index.html').read_text())
+            self.assertFalse(any(r['benchmark'] == 'planned-operation' for r in listing.model['records']))
             parser = Links()
             parser.feed((destination / 'index.html').read_text())
             planned = [case for case in parser.catalog['cases'] if case['benchmark_id'] == 'planned-operation']

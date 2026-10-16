@@ -149,12 +149,10 @@ class PublicationTests(unittest.TestCase):
         assemble_previews(self.checkout, site, ROOT, main_root=self.checkout)
         page = site / result["path"] / "summary.html"
         self.assertIn("Comparison within candidate", page.read_text())
-        from test_history_view import HistoryElements
+        from test_inline_list import ListElements
 
-        history = HistoryElements(
-            (site / result["path"] / "ci-history/index.html").read_text()
-        )
-        self.assertEqual(history.points[0]["data-baseline-commit"], "b" * 40)
+        history = ListElements((site / result["path"] / "explore.html").read_text()).model
+        self.assertTrue(all(r["baselineCommit"] == "b" * 40 for r in history["records"]))
 
     def test_unrelated_measured_baseline_is_rejected(self):
         bundle = self.bundle(measured_baseline="c" * 40)
@@ -192,10 +190,13 @@ class PublicationTests(unittest.TestCase):
         self.assertTrue((site / "previews/index.html").exists())
         self.assertTrue((page.parent / "explore.html").exists())
         self.assertIn('http-equiv="refresh"', page.read_text())
-        self.assertIn("ci-history/index.html", page.read_text())
+        self.assertIn("explore.html?tab=history", page.read_text())
         self.assertTrue((page.parent / "summary.html").exists())
-        history = (page.parent / "ci-history/index.html").read_text()
-        self.assertIn('data-history-role="proposed"', history)
+        history = (page.parent / "explore.html").read_text()
+        from test_inline_list import ListElements
+
+        model = ListElements(history).model
+        self.assertTrue(any(r["proposed"] and r["history"] for r in model["records"]))
         self.assertIn("Proposed PR #123", history)
         self.assertTrue(
             list((page.parent / "snapshots/measured").glob("*/files.sha256.json"))
@@ -239,11 +240,14 @@ class PublicationTests(unittest.TestCase):
         result = ingest(failed, self.checkout, channel="pr", current_head="b" * 40)
         site = self.root / "failed-site"
         assemble_previews(self.checkout, site, ROOT, main_root=main)
-        page = (site / result["path"] / "ci-history/index.html").read_text()
+        page = (site / result["path"] / "explore.html").read_text()
         self.assertIn("Inconclusive", page)
         self.assertIn("No candidate measurements are available", page)
-        self.assertIn('data-history-role="main"', page)
-        self.assertNotIn('data-history-role="proposed"', page)
+        from test_inline_list import ListElements
+
+        records = ListElements(page).model["records"]
+        self.assertTrue(records)
+        self.assertTrue(all(not r["proposed"] for r in records))
 
     def test_multiple_prs_and_older_runs_preserve_latest_and_build_failure_page(self):
         bundle = self.bundle()
@@ -313,23 +317,23 @@ class PublicationTests(unittest.TestCase):
         )
         site = self.root / "combined-site"
         assemble_previews(self.checkout, site, ROOT, main_root=main)
-        from test_history_view import HistoryElements
+        from test_inline_list import ListElements
 
-        page = site / result["path"] / "benchmarks/gammaloop-ci-demo/index.html"
-        history = HistoryElements(page.read_text())
+        page = site / result["path"] / "explore.html"
+        history = [r for r in ListElements(page.read_text()).model["records"] if r["history"]]
         self.assertEqual(
-            {point["data-commit"] for point in history.points}, {"b" * 40, "c" * 40}
+            {point["commit"] for point in history}, {"b" * 40, "c" * 40}
         )
         proposed = [
             point
-            for point in history.points
-            if point["data-history-role"] == "proposed"
+            for point in history
+            if point["proposed"]
         ]
         self.assertEqual(len(proposed), 1)
-        self.assertEqual(proposed[0]["data-commit"], "c" * 40)
-        self.assertEqual(proposed[0]["data-baseline-commit"], "b" * 40)
-        self.assertEqual(proposed[0]["data-pr"], "123")
-        self.assertIn('data-default-tab="history"', page.read_text())
+        self.assertEqual(proposed[0]["commit"], "c" * 40)
+        self.assertEqual(proposed[0]["baselineCommit"], "b" * 40)
+        self.assertEqual(proposed[0]["pr"], 123)
+        self.assertIn('data-list-view="history" aria-pressed="true"', page.read_text())
         self.assertEqual(inventory(main), before_main)
         self.assertEqual(inventory(source), before_pr)
         stable = (site / "previews/pr-123/index.html").read_text()

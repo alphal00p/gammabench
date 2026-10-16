@@ -514,9 +514,9 @@ def assemble_previews(data_root, destination, framework, *, main_root=None):
                 for row in data["rows"]:
                     if row["href"]:
                         row["href"] = (
-                            "benchmarks/gammaloop-ci-"
+                            "explore.html?benchmark=gammaloop-ci-"
                             + row["title"]
-                            + "/index.html?tab=history"
+                            + "&case=" + row["title"] + "&tab=history"
                         )
                 render_index(
                     data,
@@ -529,7 +529,7 @@ def assemble_previews(data_root, destination, framework, *, main_root=None):
                 render_index(
                     {
                         **data,
-                        "redirect": "ci-history/index.html"
+                        "redirect": "explore.html?tab=history"
                         if registry["benchmarks"]
                         else "summary.html",
                     },

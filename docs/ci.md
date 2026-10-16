@@ -122,52 +122,41 @@ run's base SHA remains source provenance and is not substituted into that case.
 Unrelated measured revisions are rejected. Discovery and confirmation must keep
 the same policy and measured identities for either kind of comparison.
 
-History shows the candidate's discovery measurement for each run. Baselines
-and independent confirmations remain in Compare and Evidence; neither is
-substituted into the candidate trend. Failed or unqualified candidate captures
-stay visible as gaps. Main CI captures are ordered by Actions run and attempt,
-and changes to hardware, workloads or fixed measurement conditions split lines.
+History in the standard benchmark list shows the candidate's discovery
+measurement for each run. Baselines and independent confirmations remain in
+Compare and Evidence; neither is substituted into the candidate trend. Each
+tool and implementation has its own capture/version axis. Context changes split
+solid lines, failed or missing captures retain their evidence, and CI host-only
+changes have dotted **Runner changed** connectors. Retained paired baseline ratios
+assess software changes; independent history points do not establish a speedup.
 
-The CI history overview at `ci-history/` shows a small history for every workload
-with matching metric ID, units, scope and direction. Every workload measured in
-the same Actions run and attempt shares a commit column, regardless of its
-measurement time. Reruns stay separate. Pinning workloads overlays them on one
-shared vertical scale; mini charts use individual scales. Pin selections,
-including an empty selection, are saved in the URL. A point links to its original
-comparison set. The overview uses retained values without creating new ratios
-between independent captures or rewriting any sealed evidence.
+PR links open this same list in History and include the published main history.
+Hollow diamonds marked **Proposed PR #N** distinguish the PR candidate. A dashed
+connector leads to the actual measured base only when it exists in the same
+measurement context. Comparisons within the candidate use that candidate as the
+measured baseline, without acquiring a misleading connector to main's base SHA.
+All source commits, capture dates, original pairing identities and evidence links
+remain available. Unqualified or unavailable PR captures remain explicit rather
+than falling back to a historical main point.
 
-A workload with one implementation has one full-size history. The shared
-comparison is shown only when at least two histories are pinned, avoiding a
-duplicate chart for a single selection. Solid lines keep matching measurement
-contexts. Dotted connectors labelled **Runner changed** show consecutive main
-captures whose only context difference is their CI host; CPU and runner image
-details appear in tooltips. These connectors describe capture order across
-hardware changes, while retained paired comparisons assess software changes.
-Input/settings changes, missing runs and failed measurements keep their gaps.
-
-PR links open this History view by default. Each preview combines the latest
-published main history with only that PR capture. Hollow diamonds and explicit
-**Proposed PR #N** labels distinguish the candidate from main commits, including
-in the evidence table. A dashed connector leads from the measured base commit
-only when its measurement context matches. Main's solid trend remains unchanged;
-the PR occupies a separate final column, and all points retain their actual
-capture dates in tooltips and evidence. Unqualified PR measurements remain
-visible as labeled, unplotted evidence without breaking main's trend.
-
-The value beside a mini chart belongs to its latest run column; a missing latest
-measurement never falls back to an older value. Displayed baseline ratios are
-the retained paired discovery ratios, not recomputed ratios of independent
-history points or statements of the gate outcome. Hardware and input changes
-keep separate segments. Missing runs and unsuccessful captures break main's
-lines. **Measurement details** and **Captured values and provenance** expand to
-show the qualification rules and evidence.
+The **Pinned measurements** workspace is above search and the list. Pins identify
+exact metric measurements, including their snapshot, task, source version and
+phase. Filtering and switching History/Compare do not replace them. Selecting a
+compatible subset shows stored paired multipliers with a 1× reference, or only
+absolute values for matching independent contexts. Different workloads or
+conditions stay in separate panels. No samples are pooled and no browser
+statistics or ratios are recomputed. Discovery and confirmation remain separate
+comparison sets. Expand **Evidence and captured values** to inspect both sides,
+failed cases, source reports, sealed snapshots and checksums.
 
 The stable `previews/pr-N/` URL opens the latest eligible capture. **All runs for
-this PR** lists older captures, and **Run summary** retains the gate outcome,
-commit identities and per-case results. Each archived capture is shown against
-main's currently published history when Pages is rebuilt. Preview catalogs and
-sealed evidence stay separate from main; the combined view is a build artifact.
+this PR** lists older captures, and **Run summary** retains gate outcomes, source
+commits and each case's actual measured identities. Archived previews compose
+main's currently published CI history with their own proposed capture. Preview
+catalogs and sealed evidence remain separate from main; the combined list is a
+build artifact. Existing benchmark and `/ci-history/` browsing links redirect to
+list selections with their query state preserved; original reports retain their
+URLs. After merge, main records a fresh measurement under its actual commit.
 
 Each publication commits atomically, retries Git push races against the latest
 branch, rejects conflicting duplicate identities, and accepts identical retries.
@@ -188,8 +177,8 @@ PYTHONPATH=src python3 -m gammabench.ci assemble-previews \
 ```
 
 Preview sources are data only; rendering uses the trusted framework's Typst
-templates. Each PR has a history landing page, permanent per-capture links and an
-explorer with its comparisons and evidence. CI summaries link to those URLs;
+templates. Each PR has the standard inline History/Compare list, permanent per-capture
+links and expandable evidence. CI summaries link to those URLs;
 publication errors are separate from numerical gate outcomes.
 
 History axes and captured-value rows link to their originating PRs. Preview links
