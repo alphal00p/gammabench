@@ -27,7 +27,13 @@
       el("article", class: "notice")[
         #if row.href != "" { link(row.href, row.title) } else { row.title }
         #if row.status != none { [ · #outcome(row.status)] }
-        #if row.candidate != "" { el("p")[Measured #row.candidate.slice(0, 12) against #row.baseline.slice(0, 12)] }
+        #if row.candidate != "" {
+          if row.at("comparison", default: "revision") == "within-candidate" {
+            el("p")[Comparison within candidate #row.candidate.slice(0, 12) · both sides use this commit]
+          } else {
+            el("p")[Measured #row.candidate.slice(0, 12) against #row.baseline.slice(0, 12)]
+          }
+        }
       ]
     }
     #if data.rows.len() == 0 { [No measurements have been published yet.] }
