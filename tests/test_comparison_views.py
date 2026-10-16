@@ -37,6 +37,7 @@ class ComparisonViewTests(unittest.TestCase):
             (self.root / name).write_bytes(assets.joinpath(name).read_bytes())
         shutil.copytree(assets.joinpath('theme'), self.root / 'theme')
         (self.root / 'workspace.js').write_bytes((Path(__file__).resolve().parents[1] / 'web/workspace.js').read_bytes())
+        (self.root / 'history.js').write_bytes((Path(__file__).resolve().parents[1] / 'web/history.js').read_bytes())
 
     def capture(self, date='2026-10-14T12:00:00Z'):
         def recorded_date(snapshot, suite):
@@ -66,7 +67,7 @@ class ComparisonViewTests(unittest.TestCase):
   availability: captures.map(capture => capture.availability).flatten(),
 )
 #let sets = captures.enumerate().map(((index, capture)) => (id: "set-" + str(index), label: "Recorded capture " + str(index), analysis: capture))
-#bench-document("Version fixture", "Test measurements only", home: "index.html", interactive: true, scripts: ("workspace.js",))[
+#bench-document("Version fixture", "Test measurements only", home: "index.html", interactive: true, scripts: ("history.js", "workspace.js"))[
 #el("div", attrs: (id: "benchmark-workspace", "data-default-benchmark": "fixture", "data-default-study": "''' + study + '''", "data-default-tab": "compare"))[
 #el("a", attrs: ("data-benchmark-id": "fixture", "data-study": "''' + study + '''", "data-title": "Version fixture", "data-default-metric": "completion_ns"), [Fixture])
 #el("nav", ("history", "compare", "evidence").map(tab => el("button", attrs: (type: "button", "data-workspace-tab": tab), tab)).join())

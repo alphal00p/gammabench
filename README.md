@@ -178,9 +178,15 @@ Each case opens a stable benchmark workspace with **History**, **Compare** and
 **Evidence**. Old root links still route to their selected benchmark and case.
 The explorer and reports use one monospace font and responsive layouts.
 
-History plots captured medians and observed min/max ranges on actual measurement
-capture dates, retaining measured source commits. Tool/way toggles select shared
-histories; fixed configurations remain separate segments. Missing, unsuccessful,
+History shows small workload/implementation charts with aligned measured commit
+columns. CI workloads from the same Actions run and attempt share one position;
+reruns keep separate positions. Other captures retain their snapshot and source
+identities. Columns follow capture order, with proposed PR captures in a separate
+final column. Exact timestamps remain in tooltips and evidence.
+
+Pin charts to overlay their captured medians and observed min/max ranges on a
+shared scale. Mini charts use individual vertical scales. Fixed configurations
+remain separate segments. Missing, unsuccessful,
 unqualified and undated captures break lines. Archive-only, dirty or missing pins
 remain unplotted evidence. A source commit date is never inferred from a capture.
 Ranges are not confidence intervals.
@@ -188,15 +194,18 @@ Ranges are not confidence intervals.
 CI histories use each run's candidate discovery measurement, so successive
 main commits trace the evolution of GammaLoop. Paired baselines and independent
 confirmation measurements remain in Compare and Evidence. The
-[CI history overview](https://alphal00p.github.io/gammabench/ci-history/) overlays
-selected workloads using one metric, unit and scope. Workload checkboxes and
+[CI history overview](https://alphal00p.github.io/gammabench/ci-history/) shows
+all recorded workloads for one metric, unit and scope. Pin selections and
 the selected measurement are retained in the URL; clicking a point opens its
 original paired comparison.
 
 PR previews open History by default and include the published main history.
 The PR candidate appears as a hollow diamond labeled **Proposed PR #N**; a
 dashed connector links it to its recorded base when measurement contexts match.
-Main's trend and the original capture dates remain intact. **Run summary** and
+Main's trend and the original capture dates remain intact. Any baseline ratio
+comes from the stored paired discovery comparison, not independent history
+points. **Measurement details** and **Captured values and provenance** hold the
+qualification rules and retained evidence. **Run summary** and
 **All runs for this PR** retain access to gate outcomes and older captures.
 Preview points do not enter main's catalog; merging triggers a fresh main run.
 

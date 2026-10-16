@@ -35,6 +35,7 @@ cp -R "$gammabench_repo_dir/src/gammabench/assets/theme" "$gammabench_stage/asse
 cp "$gammabench_repo_dir/src/gammabench/assets/report.css" "$gammabench_stage/assets/report.css"
 cp "$gammabench_repo_dir/src/gammabench/assets/report.js" "$gammabench_stage/assets/report.js"
 cp "$gammabench_repo_dir/web/workspace.js" "$gammabench_stage/assets/workspace.js"
+cp "$gammabench_repo_dir/web/history.js" "$gammabench_stage/assets/history.js"
 cp "$gammabench_repo_dir/web/explorer.js" "$gammabench_stage/assets/explorer.js"
 cp "$gammabench_repo_dir/src/gammabench/assets/explorer.css" "$gammabench_stage/assets/explorer.css"
 cp "$gammabench_repo_dir/src/gammabench/assets/metadata.json" "$gammabench_stage/assets/metadata.json"

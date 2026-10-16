@@ -62,13 +62,15 @@ relabeled as a main measurement: main runs again against the previous main SHA.
 History shows the candidate's discovery measurement for each run. Baselines
 and independent confirmations remain in Compare and Evidence; neither is
 substituted into the candidate trend. Failed or unqualified candidate captures
-stay visible as gaps. Captures are ordered by their recorded measurement dates,
+stay visible as gaps. Main CI captures are ordered by Actions run and attempt,
 and changes to hardware, workloads or fixed measurement conditions split lines.
 
-The CI history overview at `ci-history/` plots several selected workloads on
-one chart. Its metric selector requires matching metric IDs, units, scope and
-direction; each workload has its own line and observed ranges. Workload
-checkboxes are saved in the URL. A point links to that workload's original
+The CI history overview at `ci-history/` shows a small history for every workload
+with matching metric ID, units, scope and direction. Every workload measured in
+the same Actions run and attempt shares a commit column, regardless of its
+measurement time. Reruns stay separate. Pinning workloads overlays them on one
+shared vertical scale; mini charts use individual scales. Pin selections,
+including an empty selection, are saved in the URL. A point links to its original
 comparison set. The overview uses retained values without creating new ratios
 between independent captures or rewriting any sealed evidence.
 
@@ -77,8 +79,17 @@ published main history with only that PR capture. Hollow diamonds and explicit
 **Proposed PR #N** labels distinguish the candidate from main commits, including
 in the evidence table. A dashed connector leads from the measured base commit
 only when its measurement context matches. Main's solid trend remains unchanged;
-all points retain their actual capture dates. Unqualified PR measurements remain
+the PR occupies a separate final column, and all points retain their actual
+capture dates in tooltips and evidence. Unqualified PR measurements remain
 visible as labeled, unplotted evidence without breaking main's trend.
+
+The value beside a mini chart belongs to its latest run column; a missing latest
+measurement never falls back to an older value. Displayed baseline ratios are
+the retained paired discovery ratios, not recomputed ratios of independent
+history points or statements of the gate outcome. Hardware and input changes
+keep separate segments. Missing runs and unsuccessful captures break main's
+lines. **Measurement details** and **Captured values and provenance** expand to
+show the qualification rules and evidence.
 
 The stable `previews/pr-N/` URL opens the latest eligible capture. **All runs for
 this PR** lists older captures, and **Run summary** retains the gate outcome,

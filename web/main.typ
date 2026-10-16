@@ -17,7 +17,7 @@
   el("aside", class: "preview-notice", attrs: ("aria-label": "Proposed PR measurement"))[
     #el("strong", "Proposed PR #" + str(preview.ci.pr) + " · " + preview.ci.candidate.slice(0, 12))
     #el("p", "Gate: " + ("Passed", "Regression or correctness failure", "Inconclusive").at(preview.status))
-    #el("p")[Published main history is shown for context. Hollow diamond markers identify this PR's measured candidate; they do not represent a merged main commit.]
+    #el("p")[Main history + this PR's proposed candidate ◇]
     #if preview.snapshots.len() == 0 { el("p")[No candidate measurements are available for this run.] }
     #if preview.at("missing_cases", default: ()).len() > 0 {
       el("p", "PR measurements unavailable for: " + preview.missing_cases.join(", ") + ".")
@@ -227,11 +227,11 @@
 #if registry.families.any(family => family.id == "gammaloop-ci") {
   document("ci-history/index.html")[
     #bench-document("GammaLoop CI history", "Compare the evolution of several workloads using one metric and shared units.",
-      assets: "../assets/", home: if preview == none { "../index.html" } else { "../explore.html" }, scripts: ("workspace.js",),
+      assets: "../assets/", home: if preview == none { "../index.html" } else { "../explore.html" }, scripts: ("history.js", "workspace.js"),
     )[
       #hero(compact: true)[
         = GammaLoop CI history
-        Select a measurement, then choose the workloads to plot together.
+        Browse aligned histories. Pin workloads to compare them.
       ]
       #preview-notice("../")
       #let ci-entries = entries.filter(entry => entry.benchmark.family == "gammaloop-ci" and entry.analysis != none)
@@ -252,7 +252,7 @@
         }
         el("div", class: "bench-section", attrs: (id: "benchmark-workspace", "data-default-benchmark": "gammaloop-ci-history",
           "data-default-study": study, "data-default-tab": "history", "data-multi-workload": "true"))[
-          #el("a", attrs: (href: "index.html", "data-benchmark-id": "gammaloop-ci-history",
+          #el("a", attrs: (href: "index.html", hidden: "", "data-benchmark-id": "gammaloop-ci-history",
             "data-study": study, "data-default-metric": "generation_seconds"), [All CI workloads])
           #benchmark-history((analysis,), subjects: registry.subjects, reports: reports, comparisons: comparisons, proposals: proposals,
             initial-study: study, initial-metric: "generation_seconds", multi-workload: true)
@@ -269,7 +269,7 @@
 #for entry in entries {
   document("benchmarks/" + entry.benchmark.id + "/index.html")[
     #bench-document(entry.benchmark.title, entry.benchmark.description,
-      assets: "../../assets/", home: if preview == none { "../../index.html" } else { "../../explore.html" }, interactive: true, scripts: ("workspace.js",),
+      assets: "../../assets/", home: if preview == none { "../../index.html" } else { "../../explore.html" }, interactive: true, scripts: ("history.js", "workspace.js"),
     )[#workspace(entry: entry, root: "../../", assets: "../../assets/")]
   ]
 }
