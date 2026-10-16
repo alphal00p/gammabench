@@ -2,16 +2,21 @@
 #import "/src/gammabench/assets/matrix.typ": matrix-select
 
 // Metadata is for discovery; linked reports retain the measurement boundaries.
-#let explorer(catalog, root: "") = {
+#let explorer(catalog, root: "", model: none) = {
   assert(catalog.schema_version == 1, message: "Unsupported explorer catalog")
-  el("section", class: "benchmark-explorer", attrs: (
+  let attrs = (
     id: "benchmark-explorer", "aria-label": "Benchmark explorer",
     "data-catalog": json.encode(catalog, pretty: false), "data-root": root,
-  ))[
+  )
+  if model != none { attrs.insert("data-list-model", json.encode(model, pretty: false)) }
+  el("section", class: "benchmark-explorer", attrs: attrs)[
     #el("header", class: "explorer-heading")[
-      #el("h1")[Explore benchmarks]
-      #el("p")[Search benchmark cases and their retained configurations. Open a case to compare matching measurements.]
+      #el("h1")[Benchmarks]
+      #el("p")[Browse independent tool histories or recorded comparisons. Pin exact measurements to compare them above the list.]
     ]
+    #if model != none {
+      el("section", class: "list-pinboard", attrs: (id: "list-pins", "aria-label": "Pinned measurements", hidden: ""))[]
+    }
     #el("div", attrs: (id: "explorer-controls", hidden: ""))[
       #el("label", class: "explorer-search-label", attrs: ("for": "explorer-keywords"))[Keywords]
       #el("div", class: "explorer-search-area")[
@@ -57,8 +62,19 @@
     #el("p", attrs: (id: "explorer-notice", role: "status", hidden: ""))[]
     #el("div", class: "explorer-results-bar")[
       #el("span", attrs: (id: "explorer-count", "aria-live": "polite"))[Registered benchmark cases]
+      #if model != none {
+        el("div", class: "list-views", attrs: (role: "group", "aria-label": "Inline list view"))[
+          #for view in ("history", "compare") {
+            el("button", class: "explorer-button", attrs: (type: "button", "data-list-view": view,
+              "aria-pressed": if view == "history" { "true" } else { "false" }),
+              if view == "history" { "History" } else { "Compare" })
+          }
+        ]
+        el("a", attrs: (href: "#list-pins", id: "list-pin-jump"), [Pinned (0) ↑])
+      }
       #el("div", attrs: (id: "explorer-group-label", hidden: ""), matrix-select("explorer-group", "Group by", []))
     ]
+    #if model != none { el("div", class: "list-scope", attrs: (id: "list-scope"))[] }
     #el("div", attrs: (id: "explorer-results"))[
       #if catalog.cases.len() == 0 { el("p", class: "explorer-empty")[No benchmark cases are registered yet.] }
       #if catalog.cases.len() > 0 {
@@ -72,7 +88,11 @@
                 el("tr")[
                   #el("td")[#el("a", attrs: (href: root + item.href), item.title) #el("span", class: "explorer-description", item.description)]
                   #el("td", item.benchmark_title)
-                  #el("td", if item.captures.len() > 0 { str(item.captures.len()) + " retained configurations" } else { "No captures" })
+                  #el("td")[
+                    #if item.captures.len() > 0 {
+                      link(root + item.captures.first().at("href", default: item.href), "Retained report and evidence")
+                    } else { [No captures] }
+                  ]
                 ]
               }
             ]

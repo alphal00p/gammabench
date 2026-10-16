@@ -3,8 +3,8 @@
 Browse the [published results](https://alphal00p.github.io/gammabench/).
 
 Reproducible benchmarks for GammaLoop and related tools. Search the published
-case catalog by keywords and controlled metadata, then open a case to compare
-tools, ways and source versions. A suite declares the
+case catalog by keywords and controlled metadata, with tool histories and
+recorded comparisons directly in the list. A suite declares the
 workloads, pinned tools, required output and measurement scopes. Each execution
 produces an immutable, verifiable snapshot. Reports derive tables, comparisons,
 CSV and analysis from those snapshots without changing the measurements.
@@ -174,75 +174,64 @@ Capture conditions always match the same retained configuration. Unknown and
 not-applicable values remain distinct. The registered framework examples are
 clearly labelled and have no published captures until measurements are registered.
 
-Each case opens a stable benchmark workspace with **History**, **Compare** and
-**Evidence**. Old root links still route to their selected benchmark and case.
-The explorer and reports use one monospace font and responsive layouts.
+The list is the standard browsing interface. Switch between **History** and
+**Compare** without leaving it; each workload selects its own measurement and
+recorded comparison set. Families appear as ordinary tags, alongside controlled
+topics, rather than as a navigation hierarchy. Typed filters retain their
+requirement that capture conditions match the same retained configuration.
 
-History shows small workload/implementation charts with aligned measured commit
-columns. CI workloads from the same Actions run and attempt share one position;
-reruns keep separate positions. Other captures retain their snapshot and source
-identities. Columns follow capture order, with proposed PR captures in a separate
-final column. Exact timestamps remain in tooltips and evidence.
+History shows a separate chart for each tool, implementation and capture mode.
+Each chart keeps its own versions and capture order; different tool histories and
+benchmark workloads do not share an invented commit axis. Lines join only
+qualified, complete captures with matching measurement contexts. Failed captures
+break lines. CI host changes have neutral dotted connectors labelled **Runner
+changed**, while proposed PR candidates use hollow diamonds and a dashed connector
+to their recorded base only when contexts match. Commit and PR links retain the
+actual source identity. Versioned source archives keep their archive labels and
+pins; unknown or dirty source captures remain evidence. Capture dates are not
+commit dates, and observed min/max ranges are not confidence intervals.
 
-Commit labels link to the measured source, and **PR #N** links open the associated
-pull requests. Preview PR numbers come from retained CI provenance. Main PR
-associations are resolved from GitHub during Pages builds and cached separately
-in display metadata; builds work offline with the retained annotations. Commits
-without an associated PR keep their commit link. Captured-value rows include the
-same PR links.
+**Pinned measurements** sits above search and the results. A pin retains the exact
+benchmark, workload, metric, tool/implementation, version, snapshot and recorded
+comparison identity. Select a subset of pins and choose **Compare selection**.
+A qualified recorded set uses its stored candidate/reference multiplier, shown
+prominently with an explicit **1× reference** and absolute medians underneath.
+Both ratio directions come from retained paired analysis, not browser arithmetic.
+Matching independent captures show absolute values only. Different workloads,
+measurement scopes or unknown conditions stay in separate panels; unqualified
+captures cannot acquire a ranking. Pins survive filtering, view changes and
+shareable URL restoration without being replaced by newer measurements.
 
-Pin charts to overlay their captured medians and observed min/max ranges on a
-shared scale. Mini charts use individual vertical scales. Fixed configurations
-remain separate solid segments. CI hardware changes have dotted connectors
-labelled **Runner changed**, with CPU and runner image details in point tooltips.
-These connectors show capture order; the paired baseline ratios assess software
-changes. A single history appears once at full size. The shared comparison
-appears only when at least two histories are pinned. Missing, unsuccessful,
-unqualified and undated captures break lines. Archive-only, dirty or missing pins
-remain unplotted evidence. A source commit date is never inferred from a capture.
-Ranges are not confidence intervals.
+Compare offers each original recorded set and its actual tool/version choices.
+Discovery and confirmation are distinct sets. The **Latest available** option is
+explicitly independent and never creates a paired multiplier. Suppressed
+comparisons remain suppressed. Every workload also has expandable **Evidence and
+captured values**, including failures, unavailable cases, provenance, source
+reports, analysis JSON, sealed snapshots and checksums. Display numbers preserve
+the original binary64 serialization through the Typst rendering boundary.
 
-CI histories use each run's candidate discovery measurement, so successive
-main commits trace the evolution of GammaLoop. Paired baselines and independent
-confirmation measurements remain in Compare and Evidence. The
-[CI history overview](https://alphal00p.github.io/gammabench/ci-history/) shows
-all recorded workloads for one metric, unit and scope. Pin selections and
-the selected measurement are retained in the URL; clicking a point opens its
-original paired comparison.
+CI history follows only each run's candidate discovery measurement. Baselines and
+independent confirmations stay in Compare and Evidence. PR previews open the
+same list in History and include published main history plus the capture's
+clearly marked proposed candidate. **Run summary** and **All runs for this PR**
+retain gate outcomes and earlier captures. Preview measurements do not enter
+main's catalog; merging triggers a fresh main measurement.
 
-PR previews open History by default and include the published main history.
-The PR candidate appears as a hollow diamond labeled **Proposed PR #N**; a
-dashed connector links it to its recorded base when measurement contexts match.
-Main's trend and the original capture dates remain intact. Any baseline ratio
-comes from the stored paired discovery comparison, not independent history
-points. **Measurement details** and **Captured values and provenance** hold the
-qualification rules and retained evidence. **Run summary** and
-**All runs for this PR** retain access to gate outcomes and older captures.
-Preview points do not enter main's catalog; merging triggers a fresh main run.
+Dedicated benchmark browsing pages are retired. Existing `/benchmarks/ID/` URLs
+redirect to the corresponding list selection while retaining query and fragment
+state. `/ci-history/` opens the list filtered by the GammaLoop CI tag. Old root
+selection links also work. Original complete reports under `docs/results/CAPTURE/`
+remain immutable evidence at their existing URLs.
 
-Compare groups workloads against tools, ways and measured versions. Select an
-original recorded comparison set and exact reference. Cells use the stored paired
-relative result, with the multiplier prominent and the captured median underneath.
-Green means better, yellow equal, red worse. The fixed colour
-scale saturates at a twofold difference. Latest independent captures show absolute
-values without ratios or ranking colours. No browser statistics are recomputed.
-Hide a column with ×; **Columns** restores it. Hiding the reference clears ranking
-until explicit reselection. Per-set visibility is retained in the URL.
-
-Evidence links to retained reports, analysis, CSV, snapshot records and checksums.
-The workspace does not rewrite captures or create cross-capture paired comparisons.
-Existing complete reports remain available at their original URLs.
-
-The workspace and explorer are authored in `web/main.typ` and `web/explorer.typ`. The versioned
-[`web/benchmarks.json`](web/benchmarks.json) registry declares families, stable
-benchmark IDs, definition versions, default metrics/workloads and paired arrays of retained
-`analyses`/`reports` paths. Add a benchmark there after generating its report; append
-captures to the same entry when the benchmark definition remains compatible.
-An optional controlled metadata overlay can annotate legacy captures; exact
-fixture annotations retain input hash bindings. It cannot contradict known
-captured metadata. See [the metadata protocol](docs/metadata.md).
-Keep a new definition under a new benchmark ID when its meaning changes. The
-first registered snapshot anchors the display identity, so retain capture order.
+The list is authored in `web/main.typ`, `web/explorer.typ`, `web/list.typ` and
+`web/list.js`. Typst reuses the report's qualification and context helpers and
+freezes the display model; browser JavaScript chooses and plots retained values.
+The versioned [`web/benchmarks.json`](web/benchmarks.json) registry still declares
+stable benchmark IDs, definition versions, default metrics/workloads, registration
+tags and paired arrays of analysis/report paths. Append compatible captures to
+the same entry; changed benchmark definitions require a new ID. An optional
+controlled metadata overlay may annotate legacy captures with exact input hash
+bindings but cannot contradict captured metadata. See [metadata](docs/metadata.md).
 
 Nix captures use their retained source-to-engine subject mapping, including the
 original receipts inside a composed revision comparison. The plotted commit is

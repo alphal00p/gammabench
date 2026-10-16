@@ -65,6 +65,7 @@ const GammabenchExplorer = (() => {
     return catalog.cases.map(item => ({item, contexts: (item.captures.length ? item.captures : [null]).filter(capture => {
       if (!state.filters.every(filter => matches(read(item, capture, fields.get(filter.field)), filter, fields.get(filter.field)))) return false;
       const text = [item.title, item.description, item.benchmark_title, item.benchmark_id, item.case_id,
+        ...(item.tags || []).map(tag => '#' + tag),
         ...catalog.fields.flatMap(field => searchable(read(item, capture, field)))].join(' ').toLowerCase();
       return terms.every(term => text.includes(term));
     })})).filter(row => row.contexts.length);
@@ -191,18 +192,19 @@ if (typeof document !== 'undefined') {
     const fieldMap = new Map(fields.map(field => [field.id, field]));
     const escape = value => String(value).replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
     function href(item) {
-      if (!item.href.startsWith('benchmarks/') || item.href.includes('\\') || item.href.split('?')[0].split('/').includes('..')) return '';
+      if (!/^(benchmarks\/|index\.html(?:\?|$)|explore\.html(?:\?|$))/.test(item.href) || item.href.includes('\\') || item.href.split('?')[0].split('/').includes('..')) return '';
       return new URL((root.dataset.root || '') + item.href, location.href).href;
     }
     // Former root links remain exact links to a known benchmark workspace.
     const initial = new URLSearchParams(location.search), requested = initial.get('benchmark'), study = initial.get('study');
     const legacy = catalog.cases.find(item => requested ? item.benchmark_id === requested : study &&
       (item.study === study || item.captures.some(capture => capture.snapshot_id === study)));
-    if (legacy && href(legacy)) {
+    if (!root.dataset.listModel && legacy && href(legacy)) {
       const destination = new URL(href(legacy)); destination.search = location.search; destination.hash = location.hash;
       if (destination.pathname !== location.pathname) { location.replace(destination.href); return; }
     }
     let state = E.decode(location.search, fields), selected = null, editing = null, pendingSuggestion = null;
+    const list = typeof GammabenchList !== 'undefined' ? GammabenchList.create(root, catalog, () => render()) : null;
     let editor = {field: fields[0]?.id, op: 'eq', value: undefined};
     const notice = byId('notice'), builder = byId('builder'), fieldSelect = byId('field'), opSelect = byId('operator'), slot = byId('value-slot');
     byId('controls').hidden = false; byId('group-label').hidden = false;
@@ -365,10 +367,18 @@ if (typeof document !== 'undefined') {
       byId('chips').innerHTML = state.filters.map((filter, index) => `<span class="explorer-chip"><button type="button" data-edit-filter="${index}" aria-label="Edit filter: ${escape(filterLabel(filter))}">${escape(filterLabel(filter))}</button><button type="button" class="explorer-chip-remove" data-remove-filter="${index}" aria-label="Remove filter: ${escape(filterLabel(filter))}">×</button></span>`).join('');
       for (const button of byId('chips').querySelectorAll('[data-remove-filter]')) button.addEventListener('click', () => { state.filters.splice(Number(button.dataset.removeFilter), 1); pendingSuggestion = null; editing = null; renderEditor(); render(); remember(); });
       for (const button of byId('chips').querySelectorAll('[data-edit-filter]')) button.addEventListener('click', () => { pendingSuggestion = null; closeSuggestions(); editing = Number(button.dataset.editFilter); const filter = state.filters[editing]; editor = {field: filter.field, op: filter.op, value: filter.value}; openEditor(true); renderEditor(); });
-      const rows = E.matching(catalog, state), cases = rows.filter(row => row.item.case_id !== null).length, planned = rows.length - cases;
+      const matching = E.matching(catalog, state), rows = list ? list.scope(matching) : matching;
+      const cases = rows.filter(row => row.item.case_id !== null).length, planned = rows.length - cases;
       const count = rows.reduce((sum, row) => sum + row.contexts.filter(Boolean).length, 0);
       byId('count').textContent = `${cases} matching case${cases === 1 ? '' : 's'}${planned ? ` · ${planned} planned benchmark${planned === 1 ? '' : 's'}` : ''} · ${count} retained configuration${count === 1 ? '' : 's'}`;
       const results = byId('results');
+      if (list) {
+        list.render(rows, state.group === 'none' ? null : E.grouped(rows, fieldMap.get(state.group))
+          .map(group => ({...group, label: fieldMap.get(state.group).label + ': ' + group.label})));
+        if (state.group !== 'none' && (fieldMap.get(state.group).scope === 'capture' || fieldMap.get(state.group).type === 'tags'))
+          results.insertAdjacentHTML('beforeend', '<p class="explorer-group-note">A case can appear in more than one group. Counts above include each case once.</p>');
+        return;
+      }
       if (!rows.length) results.innerHTML = `<p class="explorer-empty">${state.errors.length ? 'Correct or clear the saved query to show results.' : 'No benchmark case matches this query. Remove a filter or broaden the keywords.'}</p>`;
       else if (state.group === 'none') results.innerHTML = table(rows);
       else {
@@ -383,7 +393,7 @@ if (typeof document !== 'undefined') {
     keywords.addEventListener('input', event => { pendingSuggestion = null; feedback.hidden = true; state.query = event.target.value; render(); remember(true); refreshSuggestions(); });
     byId('add').addEventListener('click', () => { pendingSuggestion = null; closeSuggestions(); editing = null; defaultEditor(fields[0]); openEditor(builder.hidden); renderEditor(); });
     byId('cancel').addEventListener('click', () => { const fromSuggestion = pendingSuggestion !== null; pendingSuggestion = null; editing = null; openEditor(false); if (fromSuggestion) { keywords.focus(); closeSuggestions(); } });
-    byId('clear').addEventListener('click', () => { state = {query: '', filters: [], group: 'none', errors: []}; selected = editing = pendingSuggestion = null; closeSuggestions(); feedback.hidden = true; openEditor(false); render(); remember(); });
+    byId('clear').addEventListener('click', () => { state = {query: '', filters: [], group: 'none', errors: []}; list?.clearScope(); selected = editing = pendingSuggestion = null; closeSuggestions(); feedback.hidden = true; openEditor(false); render(); remember(); });
     fieldSelect.addEventListener('change', () => { pendingSuggestion = null; defaultEditor(fieldMap.get(fieldSelect.value)); renderEditor(); });
     opSelect.addEventListener('change', () => { const field = fieldMap.get(editor.field), value = byId('value')?.value; if (value !== undefined) editor.value = field.type === 'quantity' ? {value, unit: byId('unit').value} : value; editor.op = opSelect.value; renderEditor(); });
     builder.addEventListener('submit', event => {

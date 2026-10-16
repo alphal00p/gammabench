@@ -166,7 +166,7 @@ def build_catalog(root: str | Path | None = None, *, include_workspaces: bool = 
                     digest = hashlib.sha256(_canonical(context_key).encode()).hexdigest()[:20]
                     contexts[context_key] = {
                         "id": snapshot["id"] + ":" + item["task"] + ":" + digest,
-                        "snapshot_id": snapshot["id"], "label": item["engine"] + " / " + item["variant"],
+                        "snapshot_id": snapshot["id"], "task": item["task"], "label": item["engine"] + " / " + item["variant"],
                         "metadata": values, "implementation": implementation, "metrics": [],
                         "href": report, "status": snapshot.get("status"),
                     }
@@ -191,18 +191,54 @@ def build_catalog(root: str | Path | None = None, *, include_workspaces: bool = 
                 digest = hashlib.sha256(_canonical(context_key).encode()).hexdigest()[:20]
                 by_case.setdefault(case, {}).setdefault(context_key, {
                     "id": snapshot["id"] + ":availability:" + digest, "snapshot_id": snapshot["id"],
-                    "label": item["engine"] + " / " + item["variant"], "metadata": values,
+                    "task": item["task"], "label": item["engine"] + " / " + item["variant"], "metadata": values,
                     "implementation": implementation, "metrics": [], "href": report,
                     "status": item.get("status"), "reason": item.get("reason", ""),
                 })
-        workspaces.append({"id": benchmark["id"], "analyses": analyses})
+        evidence = {}
+        display_values = {"series": {}, "comparisons": {}}
+        if include_workspaces:
+            # Typst's numeric JSON round trip can shorten binary64 decimals.
+            # Retain the original number spellings for interactive display;
+            # the browser parses them, without deriving a new statistic.
+            for analysis in analyses:
+                for item in analysis["series"]:
+                    display_values["series"][item["id"]] = {
+                        key: repr(item[key]) if item[key] is not None else None
+                        for key in ("median", "minimum", "maximum")
+                    }
+                    display_values["series"][item["id"]]["identity"] = hashlib.sha256(
+                        _canonical([benchmark["id"], item["id"]]).encode()
+                    ).hexdigest()[:24]
+                for pair in analysis["comparisons"]:
+                    display_values["comparisons"].setdefault(pair["baseline"], {})[pair["candidate"]] = {
+                        key: repr(pair[key]["median"])
+                        if pair[key]["median"] is not None else None
+                        for key in ("ratio", "speedup")
+                    }
+            for report in benchmark["reports"]:
+                presentation = checkout_path(root, report).with_name("presentation.json")
+                if not presentation.is_file():
+                    continue
+                for identifier, links in json.loads(presentation.read_text()).get("snapshots", {}).items():
+                    artifacts = {}
+                    for artifact in links.get("artifacts", []):
+                        if artifact.get("label") not in ("snapshot", "suite", "hashes"):
+                            continue
+                        path = (presentation.parent / artifact["href"]).resolve()
+                        if path.is_relative_to(root / "snapshots") and path.is_file():
+                            artifacts[artifact["label"]] = path.relative_to(root).as_posix()
+                    evidence[identifier] = artifacts
+        workspaces.append({"id": benchmark["id"], "analyses": analyses, "evidence": evidence,
+                           "display_values": display_values})
         if not case_ids:
             values = {**metadata_values(declarations), **metadata_values(overlay)}
             values = {name: value for name, value in values.items() if local_definitions[name]["scope"] == "workload"}
             _derived(values, {"benchmark.id": benchmark["id"], "benchmark.definition_version": benchmark["definition_version"]}, local_definitions)
             rows.append({"benchmark_id": benchmark["id"], "benchmark_title": benchmark["title"], "case_id": None,
                          "title": benchmark["title"], "description": benchmark["description"], "metadata": values,
-                         "captures": [], "planned": True, "href": "benchmarks/" + benchmark["id"] + "/index.html"})
+                         "captures": [], "planned": True, "tags": [benchmark["family"]],
+                         "href": "index.html?" + urlencode({"benchmark": benchmark["id"], "tab": "history"})})
         for case in sorted(case_ids):
             contexts = list(by_case.get(case, {}).values())
             base = _effective(metadata_values(overlay, case=case), metadata_values(declarations, case=case),
@@ -229,8 +265,8 @@ def build_catalog(root: str | Path | None = None, *, include_workspaces: bool = 
             rows.append({"benchmark_id": benchmark["id"], "benchmark_title": benchmark["title"], "case_id": case,
                          "title": case, "description": benchmark["description"], "metadata": common, "captures": contexts,
                          "planned": not bool(contexts), "default_metric": benchmark["default_metric"],
-                         "metadata_source": benchmark.get("metadata_sources", {}).get(case),
-                         "href": "benchmarks/" + benchmark["id"] + "/index.html?" + urlencode({"case": case, "tab": "compare"})})
+                         "metadata_source": benchmark.get("metadata_sources", {}).get(case), "tags": [benchmark["family"]],
+                         "href": "index.html?" + urlencode({"benchmark": benchmark["id"], "case": case, "tab": "history"})})
     result = {"schema_version": 1, "vocabulary_version": registry()["vocabulary_version"],
               "fields": [{"id": name, **definition} for name, definition in definitions.items()], "cases": rows}
     if include_workspaces:
