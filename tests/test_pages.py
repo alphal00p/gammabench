@@ -93,6 +93,7 @@ class PagesTests(unittest.TestCase):
         registry = json.loads((ROOT / 'web/benchmarks.json').read_text())
         self.assertEqual(json.loads((self.site / 'assets/benchmarks.json').read_text()), registry)
         self.assertTrue((self.site / 'assets/workspace.js').is_file())
+        self.assertTrue((self.site / 'assets/history.js').is_file())
         for benchmark in registry['benchmarks']:
             page = self.site / 'benchmarks' / benchmark['id'] / 'index.html'
             html = page.read_text()
@@ -143,6 +144,9 @@ class PagesTests(unittest.TestCase):
         self.assertEqual({group['data-case'] for group in history.groups}, {entry['default_case'] for entry in entries})
         self.assertTrue(all(point.get('data-comparison-href', '').startswith('../benchmarks/') for point in history.points))
         self.assertNotIn('id="history-case"', overview)
+        self.assertIn('id="history-workloads"', overview)
+        self.assertIn('id="history-pinned"', overview)
+        self.assertTrue(all(point.get('data-run-id') and point.get('data-run-attempt') for point in history.points))
 
     def test_scaffolded_benchmark_has_empty_workspace_without_fabricated_measurements(self):
         from gammabench.scaffold import create

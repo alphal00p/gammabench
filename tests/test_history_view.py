@@ -395,7 +395,27 @@ class HistoryViewTests(unittest.TestCase):
                          {analysis["snapshots"][0]["created_at"]})
         self.assertIn('id="history-overview-chart"', page)
         self.assertIn('id="history-visible-series"', page)
-        self.assertIn("capture-date axis", page)
+        self.assertIn("measured commit/run columns", page)
+        self.assertIn('id="history-workloads"', page)
+        self.assertIn('class="history-methodology"', page)
+
+    def test_ci_run_identity_and_paired_ratio_reach_the_history_without_rewriting_analysis(self):
+        analysis = self.ci_analysis()
+        for snapshot in analysis["snapshots"]:
+            snapshot["provenance"]["ci"] = {
+                "run_id": 12345678, "run_attempt": 2, "baseline": "a" * 40,
+            }
+        _, document = self.compile(analysis)
+        point = document.points[0]
+        self.assertEqual(point["data-run-id"], "12345678")
+        self.assertEqual(point["data-run-attempt"], "2")
+        self.assertEqual(point["data-baseline-commit"], "a" * 40)
+        paired = next(item for item in analysis["comparisons"] if item["candidate"] == point["data-source-series"])
+        self.assertEqual(float(point["data-paired-ratio"]), paired["ratio"]["median"])
+        # Suppressed and independent comparisons must never acquire a ratio in History.
+        paired["status"] = "suppressed"
+        _, suppressed = self.compile(analysis)
+        self.assertNotIn("data-paired-ratio", suppressed.points[0])
 
     def test_repository_changes_cannot_share_a_history_context(self):
         analysis = analyze(nix_capture(self.fixture, paired=True))

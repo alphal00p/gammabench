@@ -46,7 +46,11 @@
     } else { el("p", [No measured value was captured for this metric.]) }
   ])
 }
-#let matrix-metric(metric) = (
+#let matrix-metric(metric) = if metric.starts-with("evaluator_build_seconds.") {
+  "Evaluator construction · " + metric.split(".").last()
+} else if metric.starts-with("warm_runtime_seconds_per_sample.") {
+  "Warmed runtime per sample · " + metric.split(".").last()
+} else { (
   full_diagrams_ns: "Full diagram construction time",
   signed_routed_ns: "Signed and routed diagrams time",
   materialized_ns: "Materialized diagrams time",
@@ -57,7 +61,9 @@
   allocated_bytes: "Allocated bytes",
   peak_live_bytes: "Peak live bytes",
   live_blocks_at_peak_bytes: "Live blocks at peak bytes",
-).at(metric, default: metric)
+  generation_seconds: "Generation time",
+  generation_peak_ram_bytes: "Generation peak RAM",
+).at(metric, default: metric) }
 #let matrix-option(value, text, attrs: (:), selected: false) = {
   let attrs = attrs + (value: value)
   if selected { attrs.insert("selected", "") }

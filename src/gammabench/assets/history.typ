@@ -157,7 +157,17 @@
   let source = record.source
   let attrs = ("data-source-series": item.id, "data-snapshot": item.snapshot_id, "data-task": item.task,
     "data-capture-index": json.encode(record.capture_index), "data-created-at": record.snapshot.created_at,
-    "data-version-label": source.implementation.version_label)
+    "data-version-label": source.implementation.version_label, "data-repository": source.repository,
+    "data-commit": if history-commit(source.revision) { source.revision } else { "" },
+    "data-reason": record.reason)
+  let ci = record.snapshot.provenance.at("ci", default: (:))
+  if ci.at("run_id", default: none) != none and ci.at("run_attempt", default: none) != none {
+    attrs += ("data-run-id": str(ci.run_id), "data-run-attempt": str(ci.run_attempt),
+      "data-baseline-commit": ci.baseline)
+  }
+  if record.paired != none {
+    attrs.insert("data-paired-ratio", json.encode(record.paired.ratio.median))
+  }
   attrs.insert("data-history-role", if record.proposal == none { "main" } else { "proposed" })
   if record.proposal != none {
     attrs.insert("data-pr", str(record.proposal.pr))
@@ -245,7 +255,11 @@
       if item.validation_status != "passed" {
         reason = "Qualification " + item.validation_status + ". " + item.validation_reason
       }
+      let paired = analysis.comparisons.filter(comparison => comparison.candidate == item.id
+        and comparison.status == "comparable" and analysis.series.any(baseline => baseline.id == comparison.baseline
+          and baseline.snapshot_id == item.snapshot_id and baseline.variant == "baseline"))
       group.records.push((item: item, snapshot: snapshot, source: source, qualified: qualified, reason: reason,
+        paired: if paired.len() == 1 { paired.first() } else { none },
         proposal: proposals.at(snapshot.id, default: none), order: order, capture_index: capture-indices.at(item.snapshot_id)))
       groups.insert(key, group)
       order += 1
@@ -302,21 +316,27 @@
           attrs: ("data-study": group.study, "data-case": group.case, "data-metric": group.metric))).join()).join())
       },
     ).join())
+    #el("details", class: "history-methodology", [
+    #el("summary", [Measurement details])
     #if has-ci {
       el("p", class: "history-reading-guide")[CI history follows each run's candidate discovery measurement. Paired baselines and confirmation measurements remain in Compare and Evidence.]
     }
     #if proposals.len() > 0 {
-      el("p", class: "history-reading-guide")[Hollow diamonds marked PR are proposed measurements. Dashed connectors lead from the recorded base commit when its measurement context matches. Main history keeps its own line; all points use their actual capture dates.]
+      el("p", class: "history-reading-guide")[Hollow diamonds marked PR are proposed measurements in a separate final column. Dashed connectors lead from the recorded base commit when its measurement context matches. Main history keeps its own line. Exact capture dates remain in each point and the evidence.]
     }
     #if multi-workload {
-      el("p", class: "history-reading-guide")[Select workloads below to show their evolution together. The selected metric, units and measurement scope are shared; each workload keeps its own line and captured range.]
+      el("p", class: "history-reading-guide")[Pin workloads to compare them on one shared scale. The selected metric, units and measurement scope are shared; each workload keeps its own line and captured range.]
     }
     #el("p", class: "history-reading-guide", [
       Points identify measured tool commits. Medians and observed min–max ranges come from retained captures;
       ranges are not confidence intervals. Lines join only the same workload, metric, contract, hardware,
       capture mode and fixed dependencies. Captures with incomplete configuration metadata stay separate.
-      Chosen implementations share a measurement-capture-date axis. Source commits from different repositories are never treated as one commit sequence.
+      All charts share measured commit/run columns in capture order. Workloads from one CI run and attempt share a column.
+      Reruns remain separate columns, and source commits from different repositories are never treated as one commit sequence.
       Capture dates describe measurements, not commit dates. Missing or failed captures break lines.
+      Mini charts have individual vertical scales; the pinned comparison uses one shared scale.
+      Baseline ratios are retained paired discovery comparisons, not ratios between independent history points or gate outcomes.
+    ])
     ])
     #if all-groups.any(group => group.status.declared.contains("retired")) {
       el("label", class: "matrix-status-control", [
@@ -325,11 +345,22 @@
       ])
     }
     #el("p", attrs: (id: "history-summary", "aria-live": "polite"), [])
-    #el("section", class: "history-overview", attrs: ("aria-label": "Chosen implementation histories"), [
-      #el("div", attrs: (id: "history-visible-series", "aria-label": if multi-workload { "Visible workloads" } else { "Visible tool implementations" }), [])
-      #el("div", class: "history-chart", attrs: (id: "history-overview-chart"), [])
-      #el("p", class: "history-reading-guide", [Source versions and exact capture dates are retained below. Separate line segments keep fixed contexts; missing and failed captures are gaps. Several versions in one capture remain distinct points at the same date. Activate a point to open its recorded comparison set.])
+    #el("section", class: "history-overview", attrs: ("aria-label": "Workload histories and pinned comparison"), [
+      #el("p", class: "history-pin-navigation", el("a", attrs: (id: "history-pin-jump", href: "#history-pinned"), [Compare pinned histories ↓]))
+      #el("div", attrs: (id: "history-workloads"), [])
+      #el("section", attrs: (id: "history-pinned", "aria-label": "Pinned comparison"), [
+        #el("h3", [Pinned comparison])
+        #el("p", attrs: (id: "history-pin-count", "aria-live": "polite"), [])
+        #el("div", class: "history-run-layout", [
+          #el("div", attrs: (id: "history-visible-series", "aria-label": "Pinned workloads"), [])
+          #el("div", class: "history-run-chart", attrs: (id: "history-overview-chart"), [])
+          #el("div", [])
+        ])
+      ])
+      #el("p", class: "history-reading-guide", [Mini charts use individual vertical scales. Pinned histories share one scale. Activate a point to open its recorded comparison; missing and unqualified captures remain in the evidence.])
     ])
+    #el("details", class: "history-evidence", [
+    #el("summary", [Captured values and provenance])
     #for (index, group) in all-groups.enumerate() {
       let attrs = ("data-study": group.study, "data-case": group.case, "data-metric": group.metric,
         "data-unit": group.unit, "data-scope": group.scope, "data-direction": group.direction, "data-contract": group.contract,
@@ -387,6 +418,7 @@
           #if href != none { el("a", attrs: (href: href + "#availability"), [Retained record]) } else { [ · Report link unavailable] }
         ])
       }
+    ])
     ])
   ])
 }

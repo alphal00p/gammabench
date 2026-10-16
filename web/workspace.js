@@ -65,9 +65,7 @@
       const candidates = groups.filter(group => group.dataset.study === study() && (!visibleCase || group.dataset.case === visibleCase) &&
         group.dataset.metric === visibleMetric && ['scope', 'unit', 'direction'].every(key => !state[key] || group.dataset[key] === state[key]) &&
         (!state.contract || group.dataset.contract === state.contract) && (!state.series || group.dataset.seriesId === state.series));
-      renderWayControls(candidates);
-      const active = candidates.filter(group => !hiddenWays.has(wayIdentity(group)) &&
-        (includeRetired?.checked !== false || group.dataset.consistentlyRetired !== 'true'));
+      const active = candidates.filter(group => includeRetired?.checked !== false || group.dataset.consistentlyRetired !== 'true');
       if (state.series && active.length === 1) state.contract = active[0].dataset.contract || '';
       for (const group of groups) group.hidden = !active.includes(group);
       if (state.tab === 'history') drawOverview(active);
@@ -136,6 +134,8 @@
       if (includeRetired?.checked === false) url.searchParams.set('history_include_retired', '0'); else url.searchParams.delete('history_include_retired');
       if (hiddenWays.size) url.searchParams.set('hidden_ways', JSON.stringify([...hiddenWays].sort()));
       else url.searchParams.delete('hidden_ways');
+      if (pinnedWays !== null) url.searchParams.set('pinned', JSON.stringify([...pinnedWays].sort()));
+      else url.searchParams.delete('pinned');
       const view = byId('matrix-metric')?.value;
       const reference = byId('matrix-reference')?.value;
       const captureSet = byId('matrix-set')?.value;
@@ -165,11 +165,16 @@
       restoring = true;
       const params = new URLSearchParams(location.search);
       hiddenWays.clear();
+      pinnedWays = null;
       if (includeRetired) includeRetired.checked = params.get('history_include_retired') !== '0';
       try {
         const hidden = JSON.parse(params.get('hidden_ways') || '[]');
         if (Array.isArray(hidden)) for (const key of hidden) if (wayLabels.has(key)) hiddenWays.add(key);
       } catch { /* Invalid saved series visibility keeps captured evidence visible. */ }
+      try {
+        const pinned = JSON.parse(params.get('pinned'));
+        if (Array.isArray(pinned)) pinnedWays = new Set(pinned.filter(key => wayLabels.has(key)));
+      } catch { /* An invalid selection uses the first two available histories. */ }
       let requestedViewStudy;
       try {
         const view = JSON.parse(params.get('view'));
@@ -271,151 +276,44 @@
       }
     });
     const wayIdentity = group => JSON.stringify([group.dataset.tool, group.dataset.way, ...(multiWorkload ? [group.dataset.case] : [])]);
-    const wayLabels = new Map(groups.map(group => [wayIdentity(group), `${multiWorkload ? group.dataset.case + ' · ' : ''}${group.dataset.toolLabel} / ${group.dataset.wayLabel}`]));
+    const singleImplementation = new Set(groups.map(group => JSON.stringify([group.dataset.tool, group.dataset.way]))).size === 1;
+    const workloadLabel = group => group.dataset.case.replace(/^gl(\d+)(?:-|$)/, 'GL$1 · ')
+      .replace(/-(orientation|explicit|projected)-([34])d$/, ' · $1 $2D').replaceAll('-', ' ').replace(/ · $/, '');
+    const wayLabels = new Map(groups.map(group => [wayIdentity(group), multiWorkload && singleImplementation ? workloadLabel(group) : `${multiWorkload ? workloadLabel(group) + ' · ' : ''}${group.dataset.toolLabel} / ${group.dataset.wayLabel}`]));
     const wayPositions = new Map([...wayLabels.keys()].map((key, index) => [key, index]));
     const hiddenWays = new Set();
-    function renderWayControls(candidates) {
-      const container = byId('history-visible-series');
-      if (!container) return;
-      const choices = new Set(candidates.map(wayIdentity));
-      container.replaceChildren();
-      for (const key of choices) {
-        const label = document.createElement('label'), input = document.createElement('input'), sample = document.createElement('span');
-        input.type = 'checkbox'; input.checked = !hiddenWays.has(key); input.dataset.historyWay = key;
-        input.addEventListener('input', () => {
-          if (input.checked) hiddenWays.delete(key); else hiddenWays.add(key);
-          refreshHistory(); writeQuery();
-          [...container.querySelectorAll('input')].find(control => control.dataset.historyWay === key)?.focus();
-        });
-        sample.className = 'history-series-sample'; sample.style.setProperty('--history-series-color', `var(--history-series-${wayPositions.get(key) % 12})`);
-        label.append(input, sample, document.createTextNode(wayLabels.get(key))); container.append(label);
-      }
-    }
-
+    let pinnedWays = null;
     function drawOverview(selectedGroups) {
-      const chart = byId('history-overview-chart');
-      if (!chart || !chart.clientWidth) return;
-      const width = chart.clientWidth, height = width < 500 ? 420 : 400;
-      const left = width < 500 ? 84 : 110, right = 35, top = 35, bottom = 85;
-      const numeric = point => ['median', 'min', 'max'].every(key => point.dataset[key] !== '' && Number.isFinite(Number(point.dataset[key])));
-      const capturedTime = point => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(point.dataset.createdAt || '') ? Date.parse(point.dataset.createdAt) : NaN;
-      const points = selectedGroups.flatMap(group => [...group.querySelectorAll('.history-point')].filter(point =>
-        /^[a-f0-9]{40}$/i.test(point.dataset.commit || '') && point.dataset.validation === 'passed' && point.dataset.complete === 'true' &&
-        Number(point.dataset.count) > 0 && numeric(point) && Number.isFinite(capturedTime(point)) &&
-        Number(point.dataset.min) <= Number(point.dataset.median) && Number(point.dataset.median) <= Number(point.dataset.max)));
-      chart.replaceChildren();
-      if (!points.length) {
-        const message = document.createElement('p'); message.className = 'history-sparse';
-        message.textContent = selectedGroups.length ? 'No qualified source-commit points with recorded capture dates for this selection. Retained captures remain in the evidence below.' : 'Select an implementation to show its measured history.';
-        chart.append(message); return;
-      }
-      const svgNS = 'http://www.w3.org/2000/svg';
-      const node = (tag, attributes, text) => {
-        const element = document.createElementNS(svgNS, tag);
-        for (const [key, value] of Object.entries(attributes || {})) element.setAttribute(key, value);
-        if (text !== undefined) element.textContent = text;
-        return element;
-      };
-      const times = points.map(capturedTime), first = Math.min(...times), last = Math.max(...times);
-      const minimum = Math.min(...points.map(point => Number(point.dataset.min))), maximum = Math.max(...points.map(point => Number(point.dataset.max)));
-      const padding = Math.max((maximum - minimum) * .15, Math.abs(maximum) * .015, Number.EPSILON), low = minimum - padding, high = maximum + padding;
-      const x = point => first === last ? (left + width - right) / 2 : left + (capturedTime(point) - first) * (width - left - right) / (last - first);
-      const y = value => top + (high - value) * (height - top - bottom) / (high - low);
-      const unit = selectedGroups[0]?.dataset.unit || '';
-      const format = value => {
-        const steps = unit === 'ns' ? [[1e9, 's'], [1e6, 'ms'], [1e3, 'µs']] : unit === 'bytes' ? [[1e9, 'GB'], [1e6, 'MB'], [1e3, 'kB']] : [];
-        const [scale, label] = steps.find(([scale]) => Math.abs(value) >= scale) || [1, unit === 'bytes' ? 'B' : unit];
-        return (value / scale).toLocaleString(undefined, {maximumSignificantDigits: 3}) + (label ? ' ' + label : '');
-      };
-      const svg = node('svg', {viewBox: `0 0 ${width} ${height}`, role: 'img', class: 'history-plot',
-        'aria-label': `${multiWorkload ? 'Selected workloads' : state.case}: chosen implementation histories by recorded capture date; captured medians and observed ranges`});
-      svg.append(node('title', {}, 'Implementation histories by measurement capture date'),
-        node('desc', {}, 'Each line segment keeps one implementation and fixed measurement context. Missing, failed, unqualified or undated captures break lines. Dates belong to measurements, not source commits.'));
-      for (let tick = 0; tick < 4; tick++) {
-        const value = low + tick * (high - low) / 3;
-        svg.append(node('line', {x1: left, y1: y(value), x2: width - right, y2: y(value), class: 'history-grid'}),
-          node('text', {x: left - 12, y: y(value) + 4, 'text-anchor': 'end', class: 'history-axis-label'}, format(value)));
-      }
-      const tickCount = first === last ? 1 : width < 600 ? 2 : 4;
-      for (let tick = 0; tick < tickCount; tick++) {
-        const time = tickCount === 1 ? first : first + tick * (last - first) / (tickCount - 1);
-        const center = tickCount === 1 ? (left + width - right) / 2 : left + tick * (width - left - right) / (tickCount - 1);
-        svg.append(node('text', {x: center, y: height - bottom + 28, 'text-anchor': tick === 0 && tickCount > 1 ? 'start' : tick === tickCount - 1 && tickCount > 1 ? 'end' : 'middle', class: 'history-axis-label'}, last - first < 3 * 86400000 && tickCount > 2 ? new Date(time).toISOString().slice(5, 10) + ' ' + new Date(time).toISOString().slice(11, 16) + 'Z' : new Date(time).toISOString().slice(0, 10)));
-      }
-      svg.append(node('text', {x: left, y: 16, class: 'history-axis-label'}, selectedGroups[0]?.dataset.direction === 'higher' ? 'Higher is better' : 'Lower is better'));
-      for (const [configuration, group] of selectedGroups.entries()) {
-        const color = `var(--history-series-${wayPositions.get(wayIdentity(group)) % 12})`;
-        const records = [...group.querySelectorAll('.history-point, .history-unplotted')];
-        const recorded = records.filter(record => record.dataset.historyRole !== 'proposed');
-        const captureCounts = new Map();
-        for (const record of recorded) captureCounts.set(record.dataset.captureIndex, (captureCounts.get(record.dataset.captureIndex) || 0) + 1);
-        let segment = [], previousCapture, previousTime;
-        const flush = () => {
-          if (segment.length > 1) svg.append(node('polyline', {points: segment.map(point => `${x(point)},${y(Number(point.dataset.median))}`).join(' '),
-            class: 'history-trend', fill: 'none', style: '--history-series-color:' + color, 'stroke-dasharray': configuration % 3 === 0 ? '' : configuration % 3 === 1 ? '7 4' : '2 4', 'data-context': group.dataset.context}));
-          segment = [];
-        };
-        for (const record of records) {
-          const capture = Number(record.dataset.captureIndex), time = capturedTime(record);
-          const proposed = record.dataset.historyRole === 'proposed';
-          if (!points.includes(record)) {
-            if (!proposed) { flush(); previousCapture = capture; previousTime = time; }
-            continue;
-          }
-          if (!proposed) {
-            const ambiguousCapture = captureCounts.get(record.dataset.captureIndex) > 1;
-            if (ambiguousCapture || previousCapture !== undefined && (capture > previousCapture + 1 || time <= previousTime)) flush();
-            if (!ambiguousCapture) segment.push(record);
-            previousCapture = capture; previousTime = time;
-          } else {
-            const base = recorded.filter(row => points.includes(row) && row.dataset.commit === record.dataset.baselineCommit && capturedTime(row) <= time).at(-1);
-            if (base) svg.append(node('line', {x1: x(base), y1: y(Number(base.dataset.median)), x2: x(record), y2: y(Number(record.dataset.median)),
-              class: 'history-proposed-trend', 'data-base-commit': base.dataset.commit, 'data-proposed-commit': record.dataset.commit,
-              style: '--history-series-color:' + color}));
-          }
-          const data = record.dataset, center = x(record), medianY = y(Number(data.median));
-          const label = `${proposed ? 'Proposed PR #' + data.pr + '; ' : ''}${group.dataset.case}; ${group.dataset.label}; ${data.commit}; captured ${data.createdAt}; median ${format(Number(data.median))}, observed range ${format(Number(data.min))} to ${format(Number(data.max))}, ${data.count} samples`;
+      if (!historyRoot || !window.GammabenchHistory) return;
+      const choices = [...new Set(selectedGroups.map(wayIdentity))];
+      const pins = pinnedWays === null ? new Set(hiddenWays.size ? choices.filter(key => !hiddenWays.has(key)) : choices.slice(0, 2)) : pinnedWays;
+      window.GammabenchHistory.render({
+        root: historyRoot, groups: selectedGroups, allGroups: groups.filter(group => group.dataset.study === study()),
+        identity: wayIdentity, labels: wayLabels, colors: group => `var(--history-series-${wayPositions.get(wayIdentity(group)) % 12})`, pins,
+        toggle: key => {
+          pinnedWays = new Set(pins);
+          if (pinnedWays.has(key)) pinnedWays.delete(key); else pinnedWays.add(key);
+          hiddenWays.clear();
+          refreshHistory(); writeQuery();
+          [...historyRoot.querySelectorAll('[data-history-pin]')].find(button => button.dataset.historyPin === key)?.focus({preventScroll: true});
+        },
+        open: (record, group) => {
           const matching = [...document.querySelectorAll('.matrix-view')].filter(view => view.dataset.independent !== 'true' &&
-            ['study', 'case', 'metric', 'unit', 'scope', 'direction', 'contract'].every(key => key === 'case' || view.dataset[key] === group.dataset[key]) &&
-            [...view.querySelectorAll('thead th[data-snapshot]')].some(header => header.dataset.snapshot === data.snapshot));
-          const captureSets = new Set(matching.map(view => view.dataset.set));
-          const canCompare = captureSets.size === 1;
-          const comparisonLink = data.comparisonHref ? new URL(data.comparisonHref, location.href) : null;
-          const canNavigate = comparisonLink?.origin === location.origin;
-          const mark = node('g', {class: 'history-mark', tabindex: '0', role: canCompare || canNavigate ? 'button' : 'img',
-            'aria-label': (canCompare || canNavigate ? 'Open recorded comparison: ' : '') + label, 'data-source-series': data.sourceSeries,
-            'data-history-role': proposed ? 'proposed' : 'main'});
-          if (canCompare || canNavigate) {
-            const open = () => {
-              if (!canCompare) {
-                for (const key of ['case', 'metric', 'unit', 'scope', 'direction', 'contract']) comparisonLink.searchParams.set(key, group.dataset[key]);
-                location.assign(comparisonLink.href);
-                return;
-              }
-              selectMatrix({set: matching[0].dataset.set, metric: group.dataset.metric, case: group.dataset.case,
-                unit: group.dataset.unit, scope: group.dataset.scope, direction: group.dataset.direction, contract: group.dataset.contract});
-              activateTab('compare');
-            };
-            mark.addEventListener('click', open);
-            mark.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } });
-          }
-          mark.append(node('title', {}, label), node('line', {x1: center, x2: center, y1: y(Number(data.min)), y2: y(Number(data.max)), class: 'history-range', style: '--history-series-color:' + color}),
-            node('circle', {cx: center, cy: medianY, r: 22, fill: 'transparent', class: 'history-hit'}));
-          if (proposed) {
-            mark.append(node('path', {d: `M ${center} ${medianY - 7} l 7 7 l -7 7 l -7 -7 Z`, class: 'history-proposed-point', style: '--history-series-color:' + color}));
-            const nearRight = center > width - right - 85;
-            mark.append(node('text', {x: center + (nearRight ? -11 : 11), y: medianY - 10,
-              'text-anchor': nearRight ? 'end' : 'start', class: 'history-proposed-label'}, 'PR #' + data.pr));
-          }
-          else if (wayPositions.get(wayIdentity(group)) % 3 === 1) mark.append(node('rect', {x: center - 4, y: medianY - 4, width: 8, height: 8, fill: color}));
-          else if (wayPositions.get(wayIdentity(group)) % 3 === 2) mark.append(node('path', {d: `M ${center} ${medianY - 5} l 5 9 h -10 Z`, fill: color}));
-          else mark.append(node('circle', {cx: center, cy: medianY, r: 4, fill: color}));
-          svg.append(mark);
-        }
-        flush();
-      }
-      svg.append(node('text', {x: (left + width - right) / 2, y: height - 15, 'text-anchor': 'middle', class: 'history-axis-label'}, 'Measurement capture date'));
-      chart.append(svg);
+            ['study', 'metric', 'unit', 'scope', 'direction', 'contract'].every(key => view.dataset[key] === group.dataset[key]) &&
+            [...view.querySelectorAll('thead th[data-snapshot]')].some(header => header.dataset.snapshot === record.snapshot));
+          if (new Set(matching.map(view => view.dataset.set)).size === 1) return () => {
+            selectMatrix({set: matching[0].dataset.set, metric: group.dataset.metric, case: group.dataset.case,
+              unit: group.dataset.unit, scope: group.dataset.scope, direction: group.dataset.direction, contract: group.dataset.contract});
+            activateTab('compare');
+          };
+          const url = record.comparisonHref ? new URL(record.comparisonHref, location.href) : null;
+          if (url?.origin === location.origin) return () => {
+            for (const key of ['case', 'metric', 'unit', 'scope', 'direction', 'contract']) url.searchParams.set(key, group.dataset[key]);
+            location.assign(url.href);
+          };
+          return null;
+        },
+      });
     }
     restore();
   };
