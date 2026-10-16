@@ -128,3 +128,19 @@ Preview sources are data only; rendering uses the trusted framework's Typst
 templates. Each PR has a history landing page, permanent per-capture links and an
 explorer with its comparisons and evidence. CI summaries link to those URLs;
 publication errors are separate from numerical gate outcomes.
+
+History axes and captured-value rows link to their originating PRs. Preview links
+use the PR identity already retained in CI provenance. Main links use GitHub's
+commit-to-PR associations, restricted to merged PRs into the source repository's
+main branch. The Pages workflow resolves new commits and caches validated JSON;
+reviewed annotations in `web/source-links.json` also support offline builds.
+Lookups never modify snapshots or reports. API failures retain known links and
+leave unresolved commits linked to their source commits. A direct main push can
+therefore have a commit link without a PR link.
+
+To refresh the display annotations locally with the GitHub CLI:
+
+```sh
+PYTHONPATH=src python3 -m gammabench.source_links --repo . \
+  --cache .gammabench/source-links.json --refresh
+```

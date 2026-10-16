@@ -154,7 +154,7 @@
     clock: snapshot.provenance.at("clock", default: none),
     process_clock_scope: snapshot.provenance.at("process_wall_includes", default: none), unknown: unknown))
 }
-#let history-record-row(record, group, reports, comparisons) = {
+#let history-record-row(record, group, reports, comparisons, source-links) = {
   let item = record.item
   let source = record.source
   let attrs = ("data-source-series": item.id, "data-snapshot": item.snapshot_id, "data-task": item.task,
@@ -163,6 +163,13 @@
     "data-commit": if history-commit(source.revision) { source.revision } else { "" },
     "data-reason": record.reason)
   let ci = record.snapshot.provenance.at("ci", default: (:))
+  let pr = if record.proposal != none { record.proposal.pr } else { ci.at("pr", default: none) }
+  let pulls = if source.repository.match(regex("^https://github\\.com/[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$")) == none { () }
+  else if type(pr) == int and pr > 0 { (pr,) } else if history-commit(source.revision) {
+    source-links.at(source.repository, default: (:)).at(source.revision, default: ())
+  } else { () }
+  assert(pulls.all(number => type(number) == int and number > 0), message: "PR links require positive integer identities")
+  attrs.insert("data-pull-requests", json.encode(pulls))
   if ci.at("run_id", default: none) != none and ci.at("run_attempt", default: none) != none {
     attrs += ("data-run-id": str(ci.run_id), "data-run-attempt": str(ci.run_attempt),
       "data-baseline-commit": ci.baseline)
@@ -193,6 +200,9 @@
         if source.repository != "" { el("a", attrs: (href: source.repository + "/commit/" + source.revision), source.revision.slice(0, 10)) }
         else { source.revision.slice(0, 10) }
       } else { source.implementation.version_label }
+      #if pulls.len() > 0 {
+        el("span", class: "history-pull-requests", pulls.map(number => link(source.repository + "/pull/" + str(number), "PR #" + str(number))).join([ · ]))
+      }
       #el("span", class: "history-variant", item.variant)
       #if record.proposal != none { el("strong", class: "history-proposal-label", "Proposed PR #" + str(record.proposal.pr)) }
       #let declared-status = matrix-implementation-status(item)
@@ -210,7 +220,7 @@
   ])
 }
 
-#let benchmark-history(analyses, subjects: (:), reports: (:), comparisons: (:), proposals: (:), capture-modes: (:), initial-study: none, initial-case: none, initial-metric: none, multi-workload: false) = {
+#let benchmark-history(analyses, subjects: (:), reports: (:), comparisons: (:), proposals: (:), source-links: (:), capture-modes: (:), initial-study: none, initial-case: none, initial-metric: none, multi-workload: false) = {
   let groups = (:)
   let availability = ()
   let cases = ()
@@ -410,7 +420,7 @@
           #el("summary", [Captured values and provenance])
           #el("div", class: "history-tablewrap", el("table", class: "history-table", [
             #el("thead", el("tr", ("Measured commit", "Median", "Observed range", "Samples", "Qualification", "Evidence").map(title => el("th", attrs: (scope: "col"), title)).join()))
-            #el("tbody", group.records.map(record => history-record-row(record, group, reports, comparisons)).join())
+            #el("tbody", group.records.map(record => history-record-row(record, group, reports, comparisons, source-links)).join())
           ]))
           #el("p", [*Contract definition:*])
           #el("pre", json.encode(group.snapshot.contracts.at(group.contract, default: (:)), pretty: true))

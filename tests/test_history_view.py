@@ -47,7 +47,7 @@ class HistoryViewTests(unittest.TestCase):
         for name in ("history.typ", "matrix.typ", "components.typ"):
             (self.root / name).write_bytes(resources.files("gammabench").joinpath("assets", name).read_bytes())
 
-    def compile(self, analysis, *, reports=None, capture_modes=None, proposals=None):
+    def compile(self, analysis, *, reports=None, capture_modes=None, proposals=None, source_links=None):
         self.compilations += 1
         stem = f"history-{self.compilations}"
         data = self.root / (stem + ".json")
@@ -60,8 +60,10 @@ class HistoryViewTests(unittest.TestCase):
         modes.write_text(json.dumps(capture_modes or {}))
         proposed = self.root / (stem + "-proposals.json")
         proposed.write_text(json.dumps(proposals or {}))
+        sources = self.root / (stem + "-source-links.json")
+        sources.write_text(json.dumps(source_links or {}))
         template.write_text('#import "history.typ": benchmark-history\n'
-                            f'#benchmark-history((json("{data.name}"),), reports: json("{links.name}"), capture-modes: json("{modes.name}"), proposals: json("{proposed.name}"), subjects: '
+                            f'#benchmark-history((json("{data.name}"),), reports: json("{links.name}"), capture-modes: json("{modes.name}"), proposals: json("{proposed.name}"), source-links: json("{sources.name}"), subjects: '
                             '(linnet: (tool: "gammaloop", repository: "https://github.com/alphal00p/gammaloop")))\n')
         output = self.root / (stem + ".html")
         result = subprocess.run(["typst", "compile", "--root", str(self.root), "--features", "html",
@@ -207,6 +209,17 @@ class HistoryViewTests(unittest.TestCase):
         self.assertEqual([point["data-capture-index"] for point in document.points], ["0", "-1", "1"])
         self.assertEqual([point["data-history-role"] for point in document.points], ["main", "proposed", "main"])
         self.assertIn("Proposed PR #123", page)
+
+    def test_history_pr_links_use_committed_annotations_and_explicit_preview_identity(self):
+        analysis = self.ci_analysis()
+        sources = {"https://github.com/alphal00p/gammaloop": {"b" * 40: [140]}}
+        _, document = self.compile(analysis, source_links=sources)
+        self.assertEqual(json.loads(document.points[0]["data-pull-requests"]), [140])
+        self.assertIn("https://github.com/alphal00p/gammaloop/pull/140", document.links)
+        proposals = {analysis["snapshots"][0]["id"]: {"pr": 123, "baseline": "a" * 40}}
+        _, preview = self.compile(analysis, source_links=sources, proposals=proposals)
+        self.assertEqual(json.loads(preview.points[0]["data-pull-requests"]), [123])
+        self.assertIn("https://github.com/alphal00p/gammaloop/pull/123", preview.links)
 
     def test_measured_tool_commits_join_across_captures_without_mutating_analysis(self):
         analysis = self.simple_analysis()
