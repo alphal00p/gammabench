@@ -186,7 +186,11 @@ final column. Exact timestamps remain in tooltips and evidence.
 
 Pin charts to overlay their captured medians and observed min/max ranges on a
 shared scale. Mini charts use individual vertical scales. Fixed configurations
-remain separate segments. Missing, unsuccessful,
+remain separate solid segments. CI hardware changes have dotted connectors
+labelled **Runner changed**, with CPU and runner image details in point tooltips.
+These connectors show capture order; the paired baseline ratios assess software
+changes. A single history appears once at full size. The shared comparison
+appears only when at least two histories are pinned. Missing, unsuccessful,
 unqualified and undated captures break lines. Archive-only, dirty or missing pins
 remain unplotted evidence. A source commit date is never inferred from a capture.
 Ranges are not confidence intervals.

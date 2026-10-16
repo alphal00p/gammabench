@@ -79,9 +79,9 @@
         const count = active.reduce((total, group) => total + group.querySelectorAll('.history-point').length, 0);
         const retained = active.reduce((total, group) => total + group.querySelectorAll('.history-unplotted').length, 0);
         const proposed = active.reduce((total, group) => total + group.querySelectorAll('.history-point[data-history-role="proposed"]').length, 0);
-        const selectedCount = multiWorkload ? new Set(active.map(group => group.dataset.case)).size : active.length;
+        const selectedCount = new Set(active.map(wayIdentity)).size;
         summary.textContent = active.length
-          ? `${selectedCount} ${multiWorkload ? 'workload' : 'implementation/configuration'}${selectedCount === 1 ? '' : 's'} · ${count} qualified commit point${count === 1 ? '' : 's'}.` +
+          ? `${selectedCount} ${multiWorkload ? 'workload' : 'implementation'}${selectedCount === 1 ? '' : 's'} · ${count} qualified commit point${count === 1 ? '' : 's'}.` +
             (proposed ? ` ${proposed} proposed PR point${proposed === 1 ? '' : 's'}.` : '') +
             (retained ? ` ${retained} unplotted capture${retained === 1 ? '' : 's'} retained below.` : '')
           : 'No captured configuration for this selection. Availability and evidence remain visible.';

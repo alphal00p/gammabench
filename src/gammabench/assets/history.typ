@@ -115,7 +115,7 @@
   if type(expected) == int { valid = valid and rounds.sorted() == range(expected) }
   valid
 }
-#let history-context(study, item, snapshot, source) = {
+#let history-context(study, item, snapshot, source, without-runner: false) = {
   let retained = item.at("history", default: none)
   if type(retained) == dictionary and ("nix-build", "ci-gate").contains(retained.at("kind", default: "")) {
     let ci-inputs = none
@@ -123,11 +123,13 @@
       let identity = snapshot.provenance.at("ci_gate").at("identity").at("candidate")
       ci-inputs = (corpus: identity.corpus_sha256, settings: identity.config_sha256)
     }
+    let receipt = retained.at("context")
+    if without-runner and receipt.keys().contains("host") { let removed = receipt.remove("host") }
     return history-canonical((study: study, case: item.case, engine: item.engine,
       metric: item.metric, unit: item.unit, scope: item.scope, direction: item.direction,
       contract: snapshot.contracts.at(item.contract, default: none), workload: item.workload,
       capture: source.capture, way: source.implementation.way_id, repository: source.repository,
-      receipt_context: retained.at("context"), ci_inputs: ci-inputs))
+      receipt_context: receipt, ci_inputs: ci-inputs))
   }
   let workload = item.at("workload", default: none)
   let contract = snapshot.contracts.at(item.contract, default: none)
@@ -217,6 +219,7 @@
   let order = 0
   let capture-indices = (:)
   let capture-suites = (:)
+  let runner-contexts = (:)
   let has-ci = analyses.any(analysis => analysis.snapshots.any(snapshot => snapshot.provenance.at("ci_gate", default: none) != none))
   for analysis in analyses {
     let study = analysis.snapshots.first().id
@@ -243,11 +246,28 @@
       let snapshot = analysis.snapshots.find(snapshot => snapshot.id == item.snapshot_id)
       let source = history-source(item, snapshot, subjects, capture-modes)
       let key = history-context(study, item, snapshot, source)
+      // CI runner changes can be shown as capture-order connectors, while the
+      // full context still determines which measurements form a solid trend.
+      let runner-context = ""
+      let runner-label = ""
+      let retained = item.at("history", default: (:))
+      if type(retained) == dictionary and retained.at("kind", default: "") == "ci-gate" {
+        let host = retained.at("context").at("host", default: (:))
+        runner-label = host.at("cpu_model", default: host.at("cpu", default: ""))
+        if type(runner-label) == str and runner-label != "" {
+          let runner-key = history-context(study, item, snapshot, source, without-runner: true)
+          runner-context = runner-contexts.at(runner-key, default: "history-runner-context-" + str(runner-contexts.len()))
+          runner-contexts.insert(runner-key, runner-context)
+          let image = host.at("runner_image", default: "")
+          if type(image) == str and image != "" { runner-label += " · image " + image }
+        }
+      }
       let group = groups.at(key, default: (id: "history-series-" + str(groups.len()), study: study,
         case: item.case, metric: item.metric, unit: item.unit, scope: item.scope, direction: item.direction,
         engine: item.engine, implementation: source.implementation, repository: source.repository,
         capture: source.capture, contract: item.contract, snapshot: snapshot,
-        dependencies: source.dependencies, workload: item.workload, records: ()))
+        dependencies: source.dependencies, workload: item.workload, records: (),
+        runner_context: runner-context, runner_label: runner-label))
       let complete = history-complete(item, snapshot)
       let qualified = complete and item.validation_status == "passed" and source.reason == ""
       let reason = source.reason
@@ -331,6 +351,8 @@
       Points identify measured tool commits. Medians and observed min–max ranges come from retained captures;
       ranges are not confidence intervals. Lines join only the same workload, metric, contract, hardware,
       capture mode and fixed dependencies. Captures with incomplete configuration metadata stay separate.
+      Dotted connectors labelled Runner changed show capture order across CI hardware changes;
+      CPU and runner image details are retained in point tooltips. Those connectors do not establish a software speedup.
       All charts share measured commit/run columns in capture order. Workloads from one CI run and attempt share a column.
       Reruns remain separate columns, and source commits from different repositories are never treated as one commit sequence.
       Capture dates describe measurements, not commit dates. Missing or failed captures break lines.
@@ -346,7 +368,10 @@
     }
     #el("p", attrs: (id: "history-summary", "aria-live": "polite"), [])
     #el("section", class: "history-overview", attrs: ("aria-label": "Workload histories and pinned comparison"), [
-      #el("p", class: "history-pin-navigation", el("a", attrs: (id: "history-pin-jump", href: "#history-pinned"), [Compare pinned histories ↓]))
+      #el("p", class: "history-pin-navigation", [
+        #el("a", attrs: (id: "history-pin-jump", href: "#history-pinned"), [Compare pinned histories ↓])
+        #el("span", attrs: (id: "history-pin-hint", hidden: ""), [Pin two histories to compare])
+      ])
       #el("div", attrs: (id: "history-workloads"), [])
       #el("section", attrs: (id: "history-pinned", "aria-label": "Pinned comparison"), [
         #el("h3", [Pinned comparison])
@@ -357,7 +382,7 @@
           #el("div", [])
         ])
       ])
-      #el("p", class: "history-reading-guide", [Mini charts use individual vertical scales. Pinned histories share one scale. Activate a point to open its recorded comparison; missing and unqualified captures remain in the evidence.])
+      #el("p", class: "history-reading-guide", attrs: (id: "history-plot-guide"), [Mini charts use individual vertical scales. Pinned histories share one scale. Activate a point to open its recorded comparison; missing and unqualified captures remain in the evidence.])
     ])
     #el("details", class: "history-evidence", [
     #el("summary", [Captured values and provenance])
@@ -367,6 +392,7 @@
         "data-engine": group.engine, "data-tool": group.implementation.tool_id, "data-way": group.implementation.way_id,
         "data-tool-label": group.implementation.tool_label, "data-way-label": group.implementation.way_label,
         "data-repository": group.repository, "data-capture": group.capture, "data-series-id": group.id,
+        "data-runner-context": group.runner_context, "data-runner-label": group.runner_label,
         "data-context": group.id, "data-label": group.label, "data-status-label": group.status.label,
         "data-consistently-retired": json.encode(group.status.retired))
       if group.study != first-study or group.case != first-case or group.metric != first-metric { attrs.insert("hidden", "") }
