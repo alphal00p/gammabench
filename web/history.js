@@ -4,6 +4,14 @@
   const time = record => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(record.createdAt || '') ? Date.parse(record.createdAt) : NaN;
   const proposed = record => record.historyRole === 'proposed';
   const isCommit = value => /^[a-f0-9]{40}$/i.test(value || '');
+  function pullLinks(record) {
+    if (!/^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+$/.test(record.repository || '') || ['.', '..'].includes(record.repository.split('/').at(-1))) return [];
+    let numbers;
+    try { numbers = JSON.parse(record.pullRequests || '[]'); } catch { return []; }
+    if (!Array.isArray(numbers)) return [];
+    return [...new Set(numbers)].filter(number => Number.isSafeInteger(number) && number > 0)
+      .map(number => ({number, label: 'PR #' + number, href: record.repository + '/pull/' + number}));
+  }
   const usable = record => record.qualified && isCommit(record.commit) && record.validation === 'passed' &&
     record.complete === 'true' && Number(record.count) > 0 && Number.isFinite(time(record)) &&
     ['median', 'min', 'max'].every(key => record[key] !== undefined && record[key] !== '' && Number.isFinite(Number(record[key]))) &&
@@ -143,9 +151,28 @@
       if (index % stride && index !== axis.length - 1) return;
       if (index !== axis.length - 1 && index > axis.length - 1 - stride) return;
       const x = xAt(index, axis.length, width);
-      const label = svgNode('text', {x, y: height - 22, 'text-anchor': 'middle', class: 'history-axis-label', 'data-column': column.key}, column.label);
+      const pulls = pullLinks(column);
+      const label = svgNode('text', {x, y: height - (pulls.length ? 36 : 22), 'text-anchor': 'middle', class: 'history-axis-label', 'data-column': column.key});
+      const commitURL = isCommit(column.commit) && /^https:\/\//.test(column.repository || '') ? column.repository + '/commit/' + column.commit : null;
+      const appendLink = (parent, text, href, className) => {
+        if (!href) { parent.append(document.createTextNode(text)); return; }
+        const anchor = svgNode('a', {href, class: className, 'aria-label': text});
+        anchor.append(svgNode('tspan', {}, text)); parent.append(anchor);
+      };
+      appendLink(label, column.label, proposed(column) && pulls.length ? pulls[0].href : commitURL,
+        proposed(column) && pulls.length ? 'history-pr-link' : 'history-commit-link');
       label.append(svgNode('title', {}, `${column.repository}; ${column.commit || 'Unpinned source'}; ${column.runId ? 'run ' + column.runId + '/' + column.runAttempt + '; ' : ''}${Number.isFinite(column.date) ? new Date(column.date).toISOString() : 'Capture date unavailable'}`));
-      svg.append(label, svgNode('text', {x, y: height - 6, 'text-anchor': 'middle', class: 'history-axis-label'}, proposed(column) ? 'Proposed' : Number.isFinite(column.date) ? new Date(column.date).toISOString().slice(5, 10) : 'Undated'));
+      svg.append(label);
+      if (pulls.length) {
+        const links = svgNode('text', {x, y: height - 21, 'text-anchor': 'middle', class: 'history-axis-label'});
+        if (proposed(column)) appendLink(links, column.commit.slice(0, 7), commitURL, 'history-commit-link');
+        else pulls.forEach((pull, index) => {
+          if (index) links.append(document.createTextNode(' · '));
+          appendLink(links, pull.label, pull.href, 'history-pr-link');
+        });
+        svg.append(links);
+      }
+      svg.append(svgNode('text', {x, y: height - 6, 'text-anchor': 'middle', class: 'history-axis-label'}, proposed(column) ? 'Proposed' : Number.isFinite(column.date) ? new Date(column.date).toISOString().slice(5, 10) : 'Undated'));
     });
   }
 
@@ -153,7 +180,7 @@
     const width = container.clientWidth;
     if (!width) return;
     container.replaceChildren();
-    const mini = options.mini, height = mini ? 116 : 300, top = 24, bottom = height - (mini ? 18 : 65);
+    const mini = options.mini, height = mini ? 116 : 300, top = 24, bottom = height - (mini ? 18 : 82);
     const points = groups.flatMap(recordsOf).filter(usable);
     const unit = groups[0]?.dataset.unit || '';
     const svg = svgNode('svg', {viewBox: `0 0 ${width} ${height}`, role: 'img', class: 'history-plot',
@@ -193,7 +220,8 @@
         for (const [base, record] of parts.proposals) svg.append(svgNode('line', {x1: x(base), x2: x(record), y1: y(Number(base.median)), y2: y(Number(record.median)), class: 'history-proposed-trend', style, 'data-base-commit': base.commit, 'data-proposed-commit': record.commit}));
         for (const record of records.filter(usable)) {
           const center = x(record), median = y(Number(record.median));
-          const label = `${proposed(record) ? 'Proposed PR #' + record.pr + '; ' : ''}${group.dataset.case}; ${group.dataset.label}; ${record.commit}; ${record.runId ? 'run ' + record.runId + '/' + record.runAttempt + '; ' : ''}captured ${record.createdAt}; median ${format(Number(record.median), unit)}, observed range ${format(Number(record.min), unit)} to ${format(Number(record.max), unit)}, ${record.count} samples${record.runnerLabel ? '; runner: ' + record.runnerLabel : ''}`;
+          const pulls = pullLinks(record).map(pull => pull.label).join(', ');
+          const label = `${proposed(record) ? 'Proposed ' : ''}${pulls ? pulls + '; ' : ''}${group.dataset.case}; ${group.dataset.label}; ${record.commit}; ${record.runId ? 'run ' + record.runId + '/' + record.runAttempt + '; ' : ''}captured ${record.createdAt}; median ${format(Number(record.median), unit)}, observed range ${format(Number(record.min), unit)} to ${format(Number(record.max), unit)}, ${record.count} samples${record.runnerLabel ? '; runner: ' + record.runnerLabel : ''}`;
           const open = options.open(record, group);
           const mark = svgNode('g', {class: 'history-mark', tabindex: '0', role: open ? 'button' : 'img',
             'aria-label': (open ? 'Open recorded comparison: ' : '') + label,
@@ -238,8 +266,8 @@
     const heading = element('div', '', 'Workload / implementation'), axisBox = element('div', 'history-run-chart'), latestLabel = element('div', 'history-latest-heading', axis.some(proposed) ? 'Proposed PR' : 'Latest run');
     header.append(heading, axisBox, latestLabel); container.append(header);
     if (!single && axisBox.clientWidth) {
-      const svg = svgNode('svg', {viewBox: `0 0 ${axisBox.clientWidth} 48`, role: 'img', class: 'history-plot', 'aria-label': 'Shared measured commit and run columns'});
-      drawAxis(svg, axis, axisBox.clientWidth, 46); axisBox.append(svg);
+      const svg = svgNode('svg', {viewBox: `0 0 ${axisBox.clientWidth} 64`, role: 'img', class: 'history-plot', 'aria-label': 'Shared measured commit and run columns'});
+      drawAxis(svg, axis, axisBox.clientWidth, 62); axisBox.append(svg);
     }
     for (const key of choices) {
       const selected = groups.filter(group => identity(group) === key), records = selected.flatMap(recordsOf);
@@ -301,7 +329,7 @@
     else comparison.replaceChildren();
   }
 
-  const api = {captureKey, columns, segments, runnerTransitions, latest, usable, format, render};
+  const api = {captureKey, columns, segments, runnerTransitions, latest, pullLinks, usable, format, render};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.GammabenchHistory = api;
 })();

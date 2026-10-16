@@ -4,6 +4,7 @@
 #import "explorer.typ": explorer
 
 #let projected = json(sys.inputs.at("catalog-path"))
+#let source-links = json("source-links.json").repositories
 #let preview-path = sys.inputs.at("preview-context", default: "")
 #let preview = if preview-path == "" { none } else { json(preview-path) }
 #let proposals = if preview == none { (:) } else {
@@ -152,7 +153,7 @@
         #if entry.analysis == none {
           planned-message(entry)
         } else {
-          benchmark-history(analyses, subjects: registry.subjects, reports: reports, proposals: proposals,
+          benchmark-history(analyses, subjects: registry.subjects, reports: reports, proposals: proposals, source-links: source-links,
             capture-modes: capture-modes, initial-study: entry.study,
             initial-case: entry.benchmark.at("default_case", default: none),
             initial-metric: entry.benchmark.default_metric)
@@ -254,7 +255,7 @@
           "data-default-study": study, "data-default-tab": "history", "data-multi-workload": "true"))[
           #el("a", attrs: (href: "index.html", hidden: "", "data-benchmark-id": "gammaloop-ci-history",
             "data-study": study, "data-default-metric": "generation_seconds"), [All CI workloads])
-          #benchmark-history((analysis,), subjects: registry.subjects, reports: reports, comparisons: comparisons, proposals: proposals,
+          #benchmark-history((analysis,), subjects: registry.subjects, reports: reports, comparisons: comparisons, proposals: proposals, source-links: source-links,
             initial-study: study, initial-metric: "generation_seconds", multi-workload: true)
         ]
       }

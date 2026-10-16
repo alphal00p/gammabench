@@ -184,6 +184,13 @@ reruns keep separate positions. Other captures retain their snapshot and source
 identities. Columns follow capture order, with proposed PR captures in a separate
 final column. Exact timestamps remain in tooltips and evidence.
 
+Commit labels link to the measured source, and **PR #N** links open the associated
+pull requests. Preview PR numbers come from retained CI provenance. Main PR
+associations are resolved from GitHub during Pages builds and cached separately
+in display metadata; builds work offline with the retained annotations. Commits
+without an associated PR keep their commit link. Captured-value rows include the
+same PR links.
+
 Pin charts to overlay their captured medians and observed min/max ranges on a
 shared scale. Mini charts use individual vertical scales. Fixed configurations
 remain separate solid segments. CI hardware changes have dotted connectors

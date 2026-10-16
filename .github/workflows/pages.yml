@@ -51,6 +51,16 @@ jobs:
       - uses: typst-community/setup-typst@48aeee7543d37f01afd1ffb27307dc277387ba13 # v4
         with:
           typst-version: '0.15.1'
+      - name: Restore PR-link metadata
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .gammabench/source-links.json
+          key: source-links-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: source-links-v1-
+      - name: Resolve merged PRs for measured main commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: PYTHONPATH=src python3 -m gammabench.source_links --repo "$PWD" --cache .gammabench/source-links.json
       - name: Configure Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - name: Compile Typst pages and assemble reports and evidence

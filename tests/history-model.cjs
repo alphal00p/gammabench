@@ -69,4 +69,10 @@ assert.deepEqual(history.runnerTransitions([amd, {...intel, historyRole: 'propos
 assert.deepEqual(history.runnerTransitions([amd, {...c, context: intel.context, runnerContext: amd.runnerContext}], axis), []);
 assert.deepEqual(history.runnerTransitions([amd, {...amd}, intel], axis), []);
 assert.deepEqual(history.runnerTransitions([amd, {...intel, createdAt: amd.createdAt}], axis), []);
+assert.deepEqual(history.pullLinks({...a, pullRequests: '[141,141,140]'}).map(pull => pull.number), [141, 140]);
+assert.equal(history.pullLinks({...proposal, pullRequests: '[140]'})[0].href, 'https://github.com/alphal00p/gammaloop/pull/140');
+for (const extra of [{repository:'javascript:alert(1)',pullRequests:'[140]'}, {repository:'https://github.com/a/..',pullRequests:'[140]'},
+  {pullRequests:'["140",0,-1,null]'}, {pullRequests:'broken'}, {pullRequests:'{}'}]) {
+  assert.deepEqual(history.pullLinks({...a, ...extra}), []);
+}
 console.log('History identity, ordering, gaps, reruns, proposals and qualification passed');
