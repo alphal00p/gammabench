@@ -175,10 +175,16 @@ not-applicable values remain distinct. The registered framework examples are
 clearly labelled and have no published captures until measurements are registered.
 
 The list is the standard browsing interface. Switch between **History** and
-**Compare** without leaving it; each workload selects its own measurement and
-recorded comparison set. Families appear as ordinary tags, alongside controlled
+**Compare** without leaving it. Each tool occupies one compact row with its chart,
+captured value and **Pin** action. Select a history point to choose its capture;
+select a tool or point in Compare to make it the **1× reference**. Multipliers and
+absolute medians stay together, without a second list of capture entries.
+Each workload's **Options** contains its measurement and recorded-set choices,
+scope, contract and tags. Families appear as ordinary tags, alongside controlled
 topics, rather than as a navigation hierarchy. Typed filters retain their
 requirement that capture conditions match the same retained configuration.
+**Chart key** explains the current views once, including proposal markers,
+runner changes and the meaning of observed ranges.
 
 History shows a separate chart for each tool, implementation and capture mode.
 Each chart keeps its own versions and capture order; different tool histories and
@@ -191,7 +197,8 @@ actual source identity. Versioned source archives keep their archive labels and
 pins; unknown or dirty source captures remain evidence. Capture dates are not
 commit dates, and observed min/max ranges are not confidence intervals.
 
-**Pinned measurements** sits above search and the results. A pin retains the exact
+**Pinned measurements** appears above search and the results after the first pin.
+A pin retains the exact
 benchmark, workload, metric, tool/implementation, version, snapshot and recorded
 comparison identity. Select a subset of pins and choose **Compare selection**.
 A qualified recorded set uses its stored candidate/reference multiplier, shown
@@ -201,13 +208,23 @@ Matching independent captures show absolute values only. Different workloads,
 measurement scopes or unknown conditions stay in separate panels; unqualified
 captures cannot acquire a ranking. Pins survive filtering, view changes and
 shareable URL restoration without being replaced by newer measurements.
+Pins share one workload/measurement header and use compact capture rows. Common
+dates, implementation labels, scope, contract and report links appear once.
+Each row shows its source link, median and observed range; **Details** exposes
+provenance, full history and additional metric/capture choices. These choices add
+an explicit new pin and never replace an existing pin automatically.
+An exact copy of the pinned comparison collapses to a link in the list, with
+**Show here** available. Different capture sets, references and comparison kinds
+remain visible.
 
 Compare offers each original recorded set and its actual tool/version choices.
 Discovery and confirmation are distinct sets. The **Latest available** option is
 explicitly independent and never creates a paired multiplier. Suppressed
-comparisons remain suppressed. Every workload also has expandable **Evidence and
-captured values**, including failures, unavailable cases, provenance, source
-reports, analysis JSON, sealed snapshots and checksums. Display numbers preserve
+comparisons remain suppressed. Every workload also has expandable **Evidence**,
+including failures, unavailable cases, provenance, source
+reports, analysis JSON, sealed snapshots and checksums. Evidence groups rows by
+snapshot, phase and measurement, sharing report links and capture metadata.
+Every measured source retains its own identity and qualification. Display numbers preserve
 the original binary64 serialization through the Typst rendering boundary.
 
 CI history follows only each run's candidate discovery measurement. Baselines and

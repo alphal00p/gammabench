@@ -79,6 +79,28 @@ const GammabenchList = (() => {
     const [scale, suffix] = scales.find(([scale]) => Math.abs(value) >= scale) || [1, base === 'bytes' ? 'B' : base];
     return (value / scale).toLocaleString(undefined, {maximumSignificantDigits: 3}) + (suffix ? ' ' + suffix + rest : '');
   }
+  function sharedFields(values, fields) {
+    if (!values.length) return {};
+    return Object.fromEntries(fields.filter(field => values.every(r => Object.hasOwn(r, field) && r[field] === values[0][field]))
+      .map(field => [field, values[0][field]]));
+  }
+  function evidenceGroups(values) {
+    const groups = new Map();
+    for (const r of ordered(values)) {
+      const source = JSON.stringify([r.snapshot, r.set, measurement(r), r.report,
+        Object.entries(r.evidence || {}).sort(([a], [b]) => a.localeCompare(b))]);
+      if (!groups.has(source)) groups.set(source, []); groups.get(source).push(r);
+    }
+    return [...groups.values()];
+  }
+  const comparisonKey = (values, reference, kind) => JSON.stringify([kind, kind === 'paired' ? reference || '' : '', values.map(r => r.id).sort()]);
+  function observedRange(r) {
+    if (!numeric(r) || r.min === r.max) return '';
+    const low = format(r.min, r.unit), high = format(r.max, r.unit), suffix = low.slice(low.indexOf(' ') + 1);
+    return low.includes(' ') && high.endsWith(' ' + suffix) ? low.slice(0, low.indexOf(' ')) + '–' + high : low + '–' + high;
+  }
+  const metricTitle = r => r.metricLabel.replaceAll('_', ' ').toLowerCase().endsWith(' ' + r.unit.toLowerCase()) || r.metricLabel.toLowerCase() === r.unit.toLowerCase()
+    ? r.metricLabel : r.metricLabel + (r.unit ? ' · ' + r.unit : '');
   function decode(search, records) {
     const params = new URLSearchParams(search), ids = new Set(records.map(r => r.id));
     let saved = {}, error = '';
@@ -162,8 +184,13 @@ const GammabenchList = (() => {
     };
     const date = r => Number.isFinite(stamp(r)) ? new Date(r.createdAt).toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC'}) : 'Capture date unavailable';
     let state = decode(location.search, records), openEvidence = new Set(state.evidence), plots = new Set();
+    const openOptions = new Set(), pinEditors = new Map(), expandedComparisons = new Set();
+    const proposalContext = document.querySelector('.preview-notice')?.dataset;
+    const proposal = proposalContext?.proposedCandidate, proposalDate = date({createdAt: proposalContext?.capturedAt});
+    const coveredProposal = r => r.proposed && r.commit === proposal && r.repository === proposalContext?.proposedRepository;
+    let pinnedComparison = '', viewFeatures = {};
     let evidenceRequested = new URLSearchParams(location.search).get('tab') === 'evidence';
-    const board = byId('list-pins'); board.hidden = false;
+    const board = byId('list-pins');
     function remember(push = true) {
       const url = new URL(location.href);
       const saved = encode(state, records, [...openEvidence]);
@@ -185,7 +212,7 @@ const GammabenchList = (() => {
       for (const entry of entries) if (entry.target._visible !== false) entry.target._draw?.();
     }) : null;
     function chart(container, draw) {
-      container.className = 'list-chart'; container._draw = () => draw(container); plots.add(container);
+      container.classList.add('list-chart'); container._draw = () => draw(container); plots.add(container);
       container._visible = !observer || container.getBoundingClientRect().top < innerHeight + 200;
       observer?.observe(container); resize?.observe(container); if (container._visible) container._draw();
     }
@@ -194,14 +221,14 @@ const GammabenchList = (() => {
       const n = svgNode('svg', {viewBox: `0 0 ${width} ${height}`, width, height, role: 'img', 'aria-label': title});
       n.append(svgNode('title', {}, title)); container.replaceChildren(n); return {n, width};
     }
-    function drawHistory(container, values, selected) {
+    function drawHistory(container, values, selected, compact = false) {
       const rows = ordered(values), valid = rows.filter(r => numeric(r) && r.historyQualified && Number.isFinite(stamp(r)));
-      const {n, width} = svg(container, 178, 'Independent capture history; observed min–max ranges; capture order, not commit dates');
+      const {n, width} = svg(container, compact ? 92 : 178, 'Independent capture history; observed min–max ranges; capture order, not commit dates');
       if (!valid.length) { n.append(svgNode('text', {x: 8, y: 58}, 'No qualified history points')); return; }
-      const right = width - 14, top = 16, bottom = 116;
+      const right = width - 14, top = compact ? 9 : 16, bottom = compact ? 60 : 116;
       let low = Math.min(...valid.map(r => r.min)), high = Math.max(...valid.map(r => r.max));
       const pad = (high - low || Math.abs(high) || 1) * .18; low = low >= 0 ? Math.max(0, low - pad) : low - pad; high += pad;
-      const ticksY = [low, (low + high) / 2, high];
+      const ticksY = compact ? [low, high] : [low, (low + high) / 2, high];
       let labelsY = ticksY.map(v => format(v, rows[0].unit));
       const probe = svgNode('text', {visibility: 'hidden'}); n.append(probe);
       const labelWidth = () => Math.max(...labelsY.map(text => { probe.textContent = text; return probe.getComputedTextLength(); }));
@@ -223,11 +250,12 @@ const GammabenchList = (() => {
         n.append(line);
       }
       const ticks = new Set([0, rows.length - 1]);
-      if (rows.length > 3 && width > 380) ticks.add(Math.floor((rows.length - 1) / 2));
+      if (!compact && rows.length > 3 && width > 380) ticks.add(Math.floor((rows.length - 1) / 2));
       rows.forEach((r, i) => {
         const good = valid.includes(r), active = r.id === selected;
+        const description = `${label(r)} · ${date(r)} UTC · ${good ? format(r.median, r.unit) + ' · observed ' + format(r.min, r.unit) + '–' + format(r.max, r.unit) : r.historyReason || 'Unqualified'}${r.runnerLabel ? ' · ' + r.runnerLabel : ''}`;
         const hit = svgNode('g', {'data-list-record': r.id, class: 'list-mark'});
-        hit.append(svgNode('title', {}, `${label(r)} · ${date(r)} UTC · ${good ? format(r.median, r.unit) + ' · observed ' + format(r.min, r.unit) + '–' + format(r.max, r.unit) : r.historyReason || 'Unqualified'}${r.runnerLabel ? ' · ' + r.runnerLabel : ''}`));
+        hit.append(svgNode('title', {}, description));
         const cy = good ? y(r.median) : bottom, radius = active ? 6 : 4;
         if (good) {
           hit.append(svgNode('line', {x1: x(r), x2: x(r), y1: y(r.min), y2: y(r.max), class: 'list-range'}));
@@ -235,100 +263,109 @@ const GammabenchList = (() => {
             svgNode('circle', {cx: x(r), cy, r: radius, class: 'list-point'}));
         } else hit.append(svgNode('text', {x: x(r), y: bottom - 5, 'text-anchor': 'middle'}, '×'));
         hit.append(svgNode('rect', {x: x(r) - 15, y: cy - 16, width: 30, height: 32, fill: 'transparent'})); n.append(hit);
+        const control = button('', 'listRecord', r.id, 'list-history-hit');
+        control.setAttribute('aria-label', description); control.setAttribute('aria-pressed', String(active));
+        // Native controls make the plotted captures available by keyboard and touch.
+        control.style.left = x(r) / width * 100 + '%'; control.style.top = cy + 'px'; container.append(control);
         if (ticks.has(i)) {
           const anchor = i === 0 && rows.length > 1 ? 'start' : i === rows.length - 1 && rows.length > 1 ? 'end' : 'middle';
-          const tick = svgNode('text', {x: x(r), y: 138, 'text-anchor': anchor});
+          const tick = svgNode('text', {x: x(r), y: compact ? 85 : 138, 'text-anchor': anchor});
           tick.append(svgNode('tspan', {x: x(r)}, r.proposed ? '◇ PR #' + r.pr : r.commit ? r.commit.slice(0, 7) : r.version));
-          tick.append(svgNode('tspan', {x: x(r), dy: 15}, date(r).replace(/ \d{4}$/, ''))); n.append(tick);
+          if (!compact) tick.append(svgNode('tspan', {x: x(r), dy: 15}, date(r).replace(/ \d{4}$/, '')));
+          if (r.proposed && sourceURL(r) && Number.isSafeInteger(r.pr) && r.pr > 0) {
+            const source = svgNode('a', {href: sourceURL(r) + '/pull/' + r.pr, 'aria-label': 'Proposed PR #' + r.pr});
+            source.append(tick); n.append(source);
+          } else n.append(tick);
         }
       });
-      n.append(svgNode('text', {x: (left + right) / 2, y: 174, 'text-anchor': 'middle'}, 'Own versions / captures'));
+      if (!compact) n.append(svgNode('text', {x: (left + right) / 2, y: 174, 'text-anchor': 'middle'}, 'Own versions / captures'));
     }
-    function drawComparison(container, values, reference, kind) {
-      const ref = lookup.get(reference), height = 56 + values.length * 60;
-      const {n, width} = svg(container, height, kind === 'paired' ? 'Recorded candidate/reference multipliers; absolute medians beneath' : 'Absolute captured medians; independent measurements have no paired multiplier');
-      const left = Math.min(width > 700 ? 280 : width > 460 ? 210 : 130, width * .44), right = width - 28;
-      const results = values.map(r => ({r, pair: kind === 'paired' && ref ? paired(model.comparisons, ref, r) : null}));
-      const plotted = results.filter(v => numeric(v.r) && (kind !== 'paired' || finite(v.pair?.ratio)));
-      const raw = plotted.map(v => kind === 'paired' ? v.pair.ratio : v.r.median);
-      let low = Math.min(...raw, kind === 'paired' ? 1 : Infinity), high = Math.max(...raw, kind === 'paired' ? 1 : -Infinity);
-      if (!raw.length) { low = 0; high = 1; }
-      const padding = (high - low || Math.abs(high) || 1) * .25; low = low >= 0 ? Math.max(0, low - padding) : low - padding; high += padding;
-      const x = v => left + (v - low) / (high - low) * (right - left);
-      for (const v of [low, (low + high) / 2, high]) n.append(svgNode('line', {x1: x(v), x2: x(v), y1: 12, y2: height - 36, class: 'list-grid'}));
-      if (kind === 'paired') n.append(svgNode('line', {x1: x(1), x2: x(1), y1: 12, y2: height - 36, class: 'list-reference'}));
-      results.forEach(({r, pair}, index) => {
-        const y = 26 + index * 60, lines = width < 500 ? [r.toolLabel, r.wayLabel, r.version] : [r.toolLabel + ' / ' + r.wayLabel, r.version];
-        const name = svgNode('text', {x: 0, y});
-        const limit = Math.max(8, Math.floor((left - 12) / 6.7));
-        name.append(svgNode('title', {}, label(r)));
-        lines.forEach((line, i) => name.append(svgNode('tspan', {x: 0, dy: i ? 14 : 0}, line.length > limit ? line.slice(0, limit - 1) + '…' : line))); n.append(name);
-        const value = kind === 'paired' ? pair?.ratio : r.median;
-        if (!numeric(r) || !finite(value)) {
-          n.append(svgNode('text', {x: left, y: y + 7}, numeric(r) ? 'No paired result' : 'Unqualified'));
-          if (finite(r.median)) {
-            const captured = svgNode('text', {x: left, y: y + 25}, format(r.median, r.unit)); n.append(captured);
-            if (captured.getComputedTextLength() > right - left) {
-              captured.textContent = r.median.toLocaleString(undefined, {maximumSignificantDigits: 3, notation: 'scientific'});
-              captured.append(svgNode('tspan', {x: left, dy: 13}, r.unit));
-            }
-          }
-          return;
-        }
-        const anchor = x(value) > right - 70 ? 'end' : 'start', tx = x(value) + (anchor === 'end' ? -9 : 9);
-        const better = kind === 'paired' && pair.status !== 'reference' && (r.direction === 'higher' ? value > 1 : value < 1);
-        const worse = kind === 'paired' && pair.status !== 'reference' && (r.direction === 'higher' ? value < 1 : value > 1);
-        const mark = svgNode('circle', {cx: x(value), cy: y + 3, r: 4, class: 'list-point'});
-        mark.append(svgNode('title', {}, `${label(r)} · ${date(r)} UTC · ${format(r.median, r.unit)}${pair?.count ? ' · ' + pair.count + ' matched pairs' : ''}`)); n.append(mark);
-        const large = svgNode('text', {x: tx, y: y + 8, 'text-anchor': anchor, class: 'list-multiplier', 'data-rank': better ? 'better' : worse ? 'worse' : 'reference'},
-          kind === 'paired' ? value.toLocaleString(undefined, {maximumSignificantDigits: 3, notation: value < .01 || value >= 10000 ? 'scientific' : 'standard'}) + '×' : format(r.median, r.unit));
-        n.append(large);
-        if (large.getComputedTextLength() > right - left - 5) large.textContent = value.toLocaleString(undefined, {maximumSignificantDigits: 3, notation: 'scientific'}) + (kind === 'paired' ? '×' : '');
-        const fit = text => {
-          n.append(text); const length = text.getComputedTextLength();
-          if (x(value) + 9 + length <= right) { text.setAttribute('text-anchor', 'start'); text.setAttribute('x', x(value) + 9); }
-          else { text.setAttribute('text-anchor', 'end'); text.setAttribute('x', Math.max(left + length, x(value) - 9)); }
-        };
-        fit(large);
-        if (kind === 'paired') fit(svgNode('text', {x: tx, y: y + 25, 'text-anchor': anchor}, format(r.median, r.unit)));
-      });
-      n.append(svgNode('text', {x: (left + right) / 2, y: height - 23, 'text-anchor': 'middle'}, kind === 'paired' ? 'Reference 1×' : values[0]?.unit || ''));
-      n.append(svgNode('text', {x: (left + right) / 2, y: height - 8, 'text-anchor': 'middle'}, (values[0]?.direction === 'higher' ? 'Higher' : 'Lower') + ' is better'));
+    function drawInlineComparison(container, value, domain, kind) {
+      const width = Math.max(1, container.getBoundingClientRect().width), height = 32;
+      const n = svgNode('svg', {viewBox: `0 0 ${width} ${height}`, width, height, role: 'img',
+        'aria-label': finite(value) ? (kind === 'paired' ? multiplier(value) + ' of reference' : 'Captured value ' + value) : 'No qualified plotted value'});
+      container.replaceChildren(n);
+      const log = kind === 'paired', transform = v => log ? Math.log(v) : v;
+      const raw = domain.filter(v => finite(v) && (!log || v > 0)).map(transform);
+      if (!raw.length) return;
+      let low = Math.min(...raw), high = Math.max(...raw);
+      const pad = (high - low || Math.abs(high) || 1) * .16; low -= pad; high += pad;
+      const x = v => 6 + (transform(v) - low) / (high - low) * (width - 12);
+      n.append(svgNode('line', {x1: 6, x2: width - 6, y1: 16, y2: 16, class: 'list-grid'}));
+      if (log) n.append(svgNode('line', {x1: x(1), x2: x(1), y1: 5, y2: 27, class: 'list-reference'}));
+      if (finite(value) && (!log || value > 0)) n.append(svgNode('circle', {cx: x(value), cy: 16, r: 4, class: 'list-point'}));
     }
-    function identityLinks(r) {
-      const n = e('div', 'list-identity'), repository = sourceURL(r);
-      if (repository && /^[a-f0-9]{40}$/i.test(r.commit || '')) n.append(link(r.commit.slice(0, 10), repository + '/commit/' + r.commit));
+    const multiplier = value => value.toLocaleString(undefined, {maximumSignificantDigits: 3,
+      notation: value < .01 || value >= 10000 ? 'scientific' : 'standard'}) + '×';
+    function compactIdentity(r, proposalLink = true) {
+      const n = e('div', 'list-identity list-compact-identity'), repository = sourceURL(r);
+      if (repository && /^[a-f0-9]{40}$/i.test(r.commit || '')) n.append(link(r.commit.slice(0, 7), repository + '/commit/' + r.commit));
       else n.append(e('span', '', r.version));
-      for (const number of r.pulls || []) if (repository && Number.isSafeInteger(number) && number > 0) n.append(link('PR #' + number, repository + '/pull/' + number));
-      if (repository && r.pr && !r.pulls?.includes(r.pr)) n.append(link('Capture PR #' + r.pr, repository + '/pull/' + r.pr));
-      if (r.runId && repository) n.append(link('Run ' + r.runId + '/' + r.runAttempt, repository + '/actions/runs/' + r.runId + '/attempts/' + r.runAttempt));
-      n.append(e('span', '', date(r) + ' UTC' + (r.phase ? ' · ' + r.phase : '')));
+      for (const number of r.pulls || []) if (repository && Number.isSafeInteger(number) && number > 0 && (proposalLink || !r.proposed || number !== r.pr))
+        n.append(link((r.proposed && number === r.pr ? '◇ ' : '') + 'PR #' + number, repository + '/pull/' + number));
+      if (proposalLink && r.proposed && repository && r.pr && !r.pulls?.includes(r.pr)) n.append(link('◇ PR #' + r.pr, repository + '/pull/' + r.pr));
       return n;
     }
-    function pinButton(r) { return button(state.pins.includes(r.id) ? 'Pinned' : 'Pin capture', 'listPin', r.id, 'explorer-button' + (state.pins.includes(r.id) ? ' list-active' : '')); }
+    function pinButton(r) {
+      const pinned = state.pins.includes(r.id), n = button(pinned ? 'Pinned' : 'Pin', 'listPin', r.id, 'explorer-quiet list-pin-button');
+      n.setAttribute('aria-label', (pinned ? 'Unpin ' : 'Pin ') + label(r)); n.setAttribute('aria-pressed', String(pinned)); return n;
+    }
     function evidence(values, row) {
       const details = e('details', 'list-evidence'), caseKey = row ? key(row.item) : 'pins';
-      details.dataset.listEvidence = caseKey; details.open = openEvidence.has(caseKey); details.append(e('summary', '', 'Evidence and captured values'));
+      const unavailable = row ? model.unavailable.filter(r => r.benchmark === row.item.benchmark_id && r.case === row.item.case_id) : [];
+      const invalid = values.filter(r => !numeric(r));
+      details.dataset.listEvidence = caseKey; details.open = openEvidence.has(caseKey);
+      details.append(e('summary', '', 'Evidence' + (invalid.length ? ' · ' + invalid.length + ' unqualified' : '') + (unavailable.length ? ' · ' + unavailable.length + ' unavailable' : '')));
       if (row && evidenceRequested) { details.open = true; openEvidence.add(caseKey); evidenceRequested = false; }
-      const wrap = e('div', 'list-table-wrap'), table = e('table', 'list-evidence-table'), head = e('tr');
-      for (const text of ['Measurement / source', 'Median and observed range', 'Qualification / evidence']) head.append(e('th', '', text));
-      const thead = e('thead'); thead.append(head); table.append(thead); const body = e('tbody');
-      for (const r of ordered(values)) {
-        const tr = e('tr'), a = e('td'), b = e('td'), c = e('td');
-        a.append(e('div', '', label(r)), identityLinks(r), e('div', 'list-meta', r.variant + ' · ' + r.origin));
-        b.append(e('div', '', format(r.median, r.unit)), e('div', 'list-meta', format(r.min, r.unit) + ' – ' + format(r.max, r.unit)), e('div', 'list-meta', r.count + ' samples'));
-        c.append(e('div', '', numeric(r) ? 'Qualified · complete' : r.reason || 'Unqualified'), link('Report', path(r.report)));
-        c.append(link('Analysis JSON', path(r.report.replace(/index\.html$/, 'analysis.json'))));
-        for (const [kind, href] of Object.entries(r.evidence)) c.append(link({snapshot: 'Sealed snapshot', suite: 'Suite', hashes: 'Checksums'}[kind] || kind, path(href)));
-        c.append(pinButton(r)); tr.append(a, b, c); body.append(tr);
+      const reports = new Map(); for (const r of [...values, ...unavailable]) if (path(r.report) && !reports.has(r.report)) reports.set(r.report, r);
+      const reportLinks = e('div', 'list-evidence-reports');
+      const failureNote = r => e('p', 'list-meta', `${r.engine || r.task || 'Capture'} · ${r.status}: ${r.reason || 'No successful measurement'}`);
+      for (const r of reports.values()) {
+        const source = e('section', 'list-evidence-report'), links = e('div', 'list-identity'); source.dataset.evidenceReport = r.report;
+        if (reports.size > 1) links.append(e('span', '', r.runId ? 'Run ' + r.runId + '/' + r.runAttempt : r.snapshot || r.snapshot_id));
+        links.append(link('Report', path(r.report)), link('Analysis JSON', path(r.report.replace(/index\.html$/, 'analysis.json'))));
+        if (r.runId && sourceURL(r)) links.append(link('Actions run', sourceURL(r) + '/actions/runs/' + r.runId + '/attempts/' + r.runAttempt));
+        source.append(links);
+        for (const missing of unavailable.filter(missing => missing.report === r.report)) source.append(failureNote(missing));
+        reportLinks.append(source);
       }
-      table.append(body); wrap.append(table); details.append(wrap);
-      if (row) {
-        const unavailable = model.unavailable.filter(r => r.benchmark === row.item.benchmark_id && r.case === row.item.case_id);
-        for (const r of unavailable) {
-          const note = e('p', 'list-meta', `${r.engine || r.task || 'Capture'} · ${r.status}: ${r.reason || 'No successful measurement'} · `);
-          note.append(link('Source report', path(r.report))); details.append(note);
+      details.append(reportLinks);
+      for (const rows of evidenceGroups(values)) {
+        const first = rows[0], common = sharedFields(rows, ['wayLabel', 'createdAt', 'origin', 'phase', 'variant', 'count']);
+        const qualified = rows.every(numeric), group = e('section', 'list-evidence-group');
+        group.dataset.evidenceSnapshot = first.snapshot; group.dataset.evidenceSet = first.set;
+        group.append(e('h3', '', first.snapshot));
+        const context = e('div', 'list-case-context');
+        for (const text of [common.createdAt ? date(first) + ' UTC' : '', common.wayLabel, common.origin, common.phase,
+          common.variant && common.variant.toLowerCase() !== common.wayLabel?.toLowerCase() ? 'Variant: ' + common.variant : '',
+          Object.hasOwn(common, 'count') ? common.count + ' samples per task' : '', qualified ? 'All captures qualified' : ''])
+          if (text) context.append(e('span', '', text));
+        group.append(context);
+        const links = e('div', 'list-identity list-evidence-links');
+        for (const [kind, href] of Object.entries(first.evidence)) links.append(link({snapshot: 'Sealed snapshot', suite: 'Suite', hashes: 'Checksums'}[kind] || kind, path(href)));
+        group.append(links);
+        const wrap = e('div', 'list-table-wrap'), table = e('table', 'list-evidence-table'), head = e('tr');
+        table.dataset.allQualified = String(qualified);
+        for (const text of ['Tool / source', rows.some(r => observedRange(r)) ? 'Median / observed range' : 'Median', qualified ? 'Pin' : 'Qualification / pin']) head.append(e('th', '', text));
+        const thead = e('thead'); thead.append(head); table.append(thead); const body = e('tbody');
+        for (const r of rows) {
+          const tr = e('tr'), a = e('td'), b = e('td'), c = e('td'); tr.dataset.evidenceRecord = r.id;
+          a.append(e('div', '', r.toolLabel + (common.wayLabel ? '' : ' / ' + r.wayLabel)), compactIdentity(r));
+          const notes = [];
+          for (const field of ['phase', 'variant', 'origin']) if (!Object.hasOwn(common, field) && r[field]) notes.push(r[field]);
+          if (!Object.hasOwn(common, 'createdAt')) notes.push(date(r));
+          if (notes.length) a.append(e('div', 'list-row-note', notes.join(' · ')));
+          b.append(e('div', '', format(r.median, r.unit)));
+          if (observedRange(r)) b.append(e('div', 'list-row-note', observedRange(r)));
+          if (!Object.hasOwn(common, 'count')) b.append(e('div', 'list-row-note', r.count + ' samples'));
+          if (!qualified) c.append(e('div', 'list-meta', numeric(r) ? 'Qualified' : r.reason || 'Unqualified'));
+          if (!r.historyQualified && r.historyReason) c.append(e('div', 'list-row-note', r.historyReason));
+          c.append(pinButton(r)); tr.append(a, b, c); body.append(tr);
         }
+        table.append(body); wrap.append(table); group.append(wrap); details.append(group);
+      }
+      if (row) {
+        for (const r of unavailable.filter(r => !reports.has(r.report))) details.append(failureNote(r));
         const metadata = e('details', 'list-metadata'); metadata.append(e('summary', '', 'Workload and matching capture metadata'));
         metadata.append(e('pre', '', JSON.stringify({workload: row.item.metadata, captures: row.contexts.filter(Boolean).map(c => ({id: c.id, metadata: c.metadata, implementation: c.implementation}))}, null, 2)));
         details.append(metadata);
@@ -336,14 +373,43 @@ const GammabenchList = (() => {
       return details;
     }
     function comparePanel(host, values, reference, kind, referenceKey, draws, allowedReferences = null) {
+      viewFeatures[kind] = true;
       const ref = lookup.get(reference), refs = allowedReferences || values.filter(r => numeric(r) && (kind !== 'paired' || r.median > 0));
       const effective = ref && refs.some(r => r.id === ref.id) ? ref : refs[0];
-      if (kind === 'paired') host.append(select('Reference · 1×', referenceKey === 'pins' ? 'listPinReference' : 'listReference', referenceKey,
-        refs.map(r => [r.id, label(r)]), effective?.id));
-      host.append(e('p', 'list-meta', kind === 'paired' ? 'Recorded paired multipliers · captured medians underneath' : 'Independent captures · absolute values only; no paired multiplier'));
-      const plot = e('div'); host.append(plot); draws.push(() => chart(plot, box => drawComparison(box, values, effective?.id, kind)));
+      const results = values.map(r => ({r, pair: kind === 'paired' && effective ? paired(model.comparisons, effective, r) : null}));
+      const domain = results.filter(({r}) => numeric(r)).map(({r, pair}) => kind === 'paired' ? pair?.ratio : r.median).filter(finite);
+      if (kind === 'paired') domain.push(1);
+      const list = e('div', 'list-comparison');
+      for (const {r, pair} of results) {
+        const row = e('div', 'list-comparison-row'); row.dataset.displayedRecord = r.id;
+        const active = pair?.status === 'reference', canReference = kind === 'paired' && refs.some(ref => ref.id === r.id);
+        if (canReference) { row.dataset.listReferenceRow = r.id; row.dataset.referenceKey = referenceKey; }
+        if (active) row.classList.add('list-is-reference');
+        const tool = r.toolLabel + (values.every(a => a.wayLabel === values[0].wayLabel) ? '' : ' / ' + r.wayLabel);
+        const name = e('div', 'list-row-name'), title = canReference ? button(tool, 'listUseReference', r.id, 'explorer-quiet list-reference-choice') : e('span', 'list-record-label', tool);
+        if (canReference) {
+          title.dataset.referenceKey = referenceKey; title.setAttribute('aria-pressed', String(active));
+          title.setAttribute('aria-label', 'Use ' + label(r) + ' as 1× reference');
+        }
+        name.append(title, compactIdentity(r));
+        if (!values.every(a => date(a) === date(values[0]))) name.append(e('span', 'list-row-note', date(r)));
+        if (active) name.append(e('span', 'list-row-note', 'Reference'));
+        else if (r.phase && r.variant) name.append(e('span', 'list-row-note', r.variant === 'baseline' ? 'paired base' : r.variant));
+        const value = kind === 'paired' ? pair?.ratio : r.median, plot = e('div', 'list-inline-plot');
+        const ratio = e('div', 'list-row-ratio', kind === 'paired' && finite(value) ? multiplier(value) : '');
+        if (kind === 'paired' && finite(value) && !active) ratio.dataset.rank = (r.direction === 'higher' ? value > 1 : value < 1) ? 'better' : value === 1 ? 'same' : 'worse';
+        const median = e('div', 'list-row-median', format(r.median, r.unit));
+        if (kind !== 'paired') median.classList.add('list-absolute-value');
+        row.append(name, plot, ratio, median, pinButton(r));
+        if (kind === 'paired' && !finite(value)) row.append(e('p', 'list-row-warning', pair?.reason || 'No recorded qualified pairing'));
+        else if (!numeric(r)) row.append(e('p', 'list-row-warning', r.reason || 'Unqualified measurement'));
+        list.append(row); draws.push(() => chart(plot, box => drawInlineComparison(box, numeric(r) ? value : null, domain, kind)));
+      }
+      host.append(list);
+      if (kind === 'absolute') host.append(e('p', 'list-chart-caption', 'Independent captures · no paired multiplier'));
     }
     function historyPanels(host, values, row, metricKey, draws) {
+      viewFeatures.history = true;
       const histories = new Map();
       for (const r of values.filter(r => r.history)) { const k = implementation(r); if (!histories.has(k)) histories.set(k, []); histories.get(k).push(r); }
       if (!histories.size) { host.append(e('p', 'list-meta', 'No candidate discovery history for this measurement. Baselines and confirmation remain in Compare and Evidence.')); return; }
@@ -351,20 +417,23 @@ const GammabenchList = (() => {
       for (const [impl, captures] of histories) {
         const rows = ordered(captures), selectionKey = key(row.item) + metricKey + impl;
         const selected = rows.find(r => r.id === state.choices[selectionKey]) || rows.at(-1), first = rows[0];
-        const panel = e('section', 'list-history'), heading = e('div', 'list-history-heading');
-        heading.append(e('h3', '', first.toolLabel + ' / ' + first.wayLabel), e('span', 'list-current-value', 'Selected: ' + format(selected.median, selected.unit)));
-        panel.append(heading, e('p', 'list-meta', rows.length + ' own captures · ' + new Set(rows.map(r => r.context)).size + ' measurement context(s)'));
-        const plot = e('div'); panel.append(plot);
-        const controls = e('div', 'list-capture-controls');
-        controls.append(select('Capture to pin', 'listCapture', selectionKey, rows.map(r => [r.id, (r.proposed ? '◇ PR #' + r.pr : r.version) + ' · ' + date(r) + ' · ' + format(r.median, r.unit) + (!r.historyQualified ? ' · ' + (r.historyReason || 'unqualified') : '')]), selected.id), pinButton(selected));
-        panel.append(controls, identityLinks(selected));
-        if (segments(rows, model.unavailable, records).runners.length) panel.append(e('p', 'list-meta', 'Dotted connector: Runner changed. Paired results assess software changes.'));
+        const panel = e('section', 'list-history'), heading = e('div', 'list-history-name');
+        panel.dataset.selectedRecord = selected.id;
+        const title = first.toolLabel + (values.every(r => r.wayLabel === first.wayLabel) ? '' : ' / ' + first.wayLabel) +
+          (values.some(r => r.tool === first.tool && r.way === first.way && r.capture !== first.capture) ? ' · ' + first.capture : '');
+        heading.append(e('h3', '', title));
+        if (!coveredProposal(selected)) heading.append(compactIdentity(selected, false));
+        if (captures.some(r => r.proposed)) viewFeatures.proposal = true;
+        if (segments(rows, model.unavailable, records).runners.length) viewFeatures.runners = true;
+        const plot = e('div', 'list-history-plot');
+        const value = e('div', 'list-history-value');
+        value.append(e('div', 'list-current-value', format(selected.median, selected.unit)));
+        if (!coveredProposal(selected) || date(selected) !== proposalDate) value.append(e('span', 'list-row-note', date(selected)));
+        if (!selected.historyQualified) value.append(e('span', 'list-row-warning', selected.historyReason || 'Unqualified history point'));
+        panel.append(heading, plot, value, pinButton(selected));
         if (model.unavailable.some(a => a.benchmark === first.benchmark && a.case === first.case && a.engine === first.tool && stamp(a) >= stamp(rows.at(-1))))
-          panel.append(e('p', 'list-meta', 'A later capture is unavailable. The selected older measurement and failure evidence remain explicit.'));
-        if (selected.proposed) panel.append(e('p', 'list-meta list-proposal-label', '◇ Proposed PR #' + selected.pr));
-        if (finite(selected.pairedRatio)) panel.append(e('p', 'list-meta', selected.pairedRatio.toLocaleString(undefined, {maximumSignificantDigits: 3}) + '× recorded paired baseline'));
-        const compare = button('Show recorded comparison', 'listShowSet', selected.id, 'explorer-quiet'); panel.append(compare);
-        grid.append(panel); draws.push(() => chart(plot, box => drawHistory(box, rows, selected.id)));
+          panel.append(e('p', 'list-row-warning', 'Later capture unavailable · showing an earlier measurement'));
+        grid.append(panel); draws.push(() => chart(plot, box => drawHistory(box, rows, selected.id, true)));
       }
       host.append(grid);
     }
@@ -374,8 +443,8 @@ const GammabenchList = (() => {
       const heading = e('div', 'list-case-heading'), title = e('h2', '', item.benchmark_title);
       heading.append(title); const tags = e('div', 'list-tags');
       for (const tag of new Set([...(item.tags || []), ...(Array.isArray(item.metadata?.topic) ? item.metadata.topic : [])])) tags.append(button('#' + tag, 'listTag', tag, 'explorer-quiet'));
-      heading.append(tags); panel.append(heading);
-      if (item.case_id !== item.benchmark_title) panel.append(e('p', 'list-workload', item.case_id || 'Workload not declared'));
+      if (item.case_id !== item.benchmark_title) title.append(e('span', 'list-workload', item.case_id || 'Workload not declared'));
+      panel.append(heading);
       if (!values.length) { panel.append(e('p', 'list-meta', item.planned ? 'No measurements yet. This benchmark is registered for capture.' : 'No measured values match this configuration.'), evidence([], row)); return panel; }
       const metrics = [...new Map(values.map(r => [measurement(r), r])).entries()];
       const params = new URLSearchParams(location.search);
@@ -391,9 +460,14 @@ const GammabenchList = (() => {
         metrics.find(([, r]) => r.metric === item.default_metric) || metrics[0];
       const metricKey = chosen[0], current = values.filter(r => measurement(r) === metricKey), first = current[0];
       if (legacy) state.metrics[caseKey] = metricKey;
-      panel.append(select('Measurement', 'listMetric', caseKey, metrics.map(([k, r]) => [k, r.metricLabel + ' · ' + r.unit + (metrics.some(([other, v]) => other !== k && v.metric === r.metric) ? ' · ' + r.scope + ' · ' + r.contract : '')]), metricKey));
-      const details = e('details', 'list-measurement-details'); details.append(e('summary', '', 'Measurement details'), e('p', 'list-meta', first.scope), e('p', 'list-meta', 'Contract: ' + first.contract + ' · ' + (first.direction === 'higher' ? 'higher' : 'lower') + ' is better. Ranges are observed min–max, not confidence intervals.'));
-      panel.append(details);
+      const context = e('div', 'list-case-context');
+      context.append(e('span', '', metricTitle(first)), e('span', '', (first.direction === 'higher' ? 'Higher' : 'Lower') + ' is better'));
+      if (current.every(r => r.wayLabel === first.wayLabel)) context.append(e('span', '', first.wayLabel));
+      panel.append(context);
+      const optionsPanel = e('details', 'list-options'); optionsPanel.dataset.listOptions = caseKey; optionsPanel.open = openOptions.has(caseKey);
+      optionsPanel.append(e('summary', '', 'Options'));
+      if (metrics.length > 1) optionsPanel.append(select('Measurement', 'listMetric', caseKey, metrics.map(([k, r]) => [k, r.metricLabel + ' · ' + r.unit + (metrics.some(([other, v]) => other !== k && v.metric === r.metric) ? ' · ' + r.scope + ' · ' + r.contract : '')]), metricKey));
+      optionsPanel.append(e('p', 'list-meta', first.scope), e('p', 'list-meta', 'Contract: ' + first.contract), tags);
       if (state.view === 'history') historyPanels(panel, current, row, metricKey, draws);
       else {
         const options = [...new Set(current.map(r => r.set))].map(id => sets.get(id));
@@ -404,7 +478,9 @@ const GammabenchList = (() => {
         const setId = state.sets[setKey] === 'independent' ? 'independent' : selected.id;
         if (requested && options.some(s => s.id === requested || s.report === requested) && !state.sets[setKey]) state.sets[setKey] = selected.id;
         if (requested && !options.some(s => s.id === requested || s.report === requested)) panel.append(e('p', 'list-meta', 'The requested comparison is unavailable in this catalog. Choose a retained set below.'));
-        panel.append(select('Recorded comparison set', 'listSet', setKey, [...options.map(s => [s.id, s.label]), ['independent', 'Latest available · independent captures']], setId));
+        optionsPanel.append(select('Recorded comparison set', 'listSet', setKey, [...options.map(s => [s.id, s.label]), ['independent', 'Latest available · independent captures']], setId));
+        const capture = current.find(r => r.set === setId);
+        context.append(e('span', '', setId === 'independent' ? 'Latest available' : date(capture) + (selected.phase ? ' · ' + selected.phase : '')));
         let displayed = current.filter(r => r.set === setId);
         if (setId === 'independent') {
           const latest = new Map(); for (const r of ordered(current.filter(r => r.history))) latest.set(implementation(r), r); displayed = [...latest.values()];
@@ -413,61 +489,173 @@ const GammabenchList = (() => {
         const reference = displayed.find(r => r.id === state.references[refKey]) || displayed.find(legacyReferenceMatches) || displayed.find(r => r.variant === 'baseline') || displayed.find(numeric) || displayed[0];
         if (legacyRef.length && reference && legacyReferenceMatches(reference)) state.references[refKey] = reference.id;
         if (legacyRef.length && !displayed.some(legacyReferenceMatches)) panel.append(e('p', 'list-meta', 'The requested reference is unavailable in this selection. Choose a retained reference.'));
-        comparePanel(panel, displayed, reference?.id, setId === 'independent' ? 'absolute' : 'paired', refKey, draws);
-        for (const r of displayed) {
-          const line = e('div', 'list-capture-row'), text = e('div'); text.append(e('div', 'list-record-label', label(r)), identityLinks(r));
-          if (reference && setId !== 'independent') {
-            const result = paired(model.comparisons, reference, r);
-            if (result.status === 'suppressed') text.append(e('p', 'list-meta', result.reason));
-          }
-          line.append(text, pinButton(r)); panel.append(line);
+        const kind = setId === 'independent' ? 'absolute' : 'paired';
+        const eligible = displayed.filter(r => numeric(r) && (kind !== 'paired' || r.median > 0));
+        const effective = eligible.find(r => r.id === reference?.id) || eligible[0];
+        const identity = comparisonKey(displayed, effective?.id, kind), duplicate = identity === pinnedComparison;
+        if (duplicate) {
+          const notice = e('div', 'list-duplicate'); notice.append(link('Shown in pinned comparison ↑', '#list-pins'),
+            button(expandedComparisons.has(identity) ? 'Hide here' : 'Show here', 'listExpandComparison', identity, 'explorer-quiet'));
+          if (expandedComparisons.has(identity)) panel.append(notice);
+          else { panel.classList.add('list-case-pinned'); context.remove(); heading.append(notice); }
         }
-        for (const missing of model.unavailable.filter(r => r.benchmark === item.benchmark_id && r.case === item.case_id && (setId === 'independent' || r.report === selected.report)))
-          panel.append(e('p', 'list-meta', `${missing.engine || missing.task || 'Capture'} · ${missing.status}: ${missing.reason || 'No measured value'}`));
+        if (!duplicate || expandedComparisons.has(identity)) comparePanel(panel, displayed, effective?.id, kind, refKey, draws);
       }
-      panel.append(evidence(current, row)); return panel;
+      const footer = e('div', 'list-case-footer'); footer.append(optionsPanel, evidence(current, row)); panel.append(footer); return panel;
+    }
+    function pinDetails(r, draws, shared) {
+      const options = e('div', 'list-pin-details'); options.hidden = !openOptions.has('pin:' + r.id);
+      options.id = 'pin-details-' + (r.shortId || state.pins.indexOf(r.id));
+      const captured = [];
+      if (!shared.createdAt) captured.push('Captured ' + (Number.isFinite(stamp(r)) ? r.createdAt : 'date unavailable'));
+      if (!shared.origin && r.origin) captured.push(r.origin);
+      if (captured.length) options.append(e('p', 'list-meta', captured.join(' · ')));
+      if (!shared.qualified || !shared.count) options.append(e('p', 'list-meta', (numeric(r) ? 'Qualified' : r.reason || 'Unqualified') +
+        (shared.count ? '' : ' · ' + r.count + ' samples')));
+      if (!r.historyQualified && r.historyReason) options.append(e('p', 'list-meta', r.historyReason));
+      const repository = sourceURL(r), links = e('div', 'list-identity');
+      if (repository && r.pr && !r.pulls?.includes(r.pr)) links.append(link('Capture PR #' + r.pr, repository + '/pull/' + r.pr));
+      if (repository && r.runId) links.append(link('Run ' + r.runId + '/' + r.runAttempt, repository + '/actions/runs/' + r.runId + '/attempts/' + r.runAttempt));
+      if (!shared.report) links.append(link('Report and evidence', path(r.report)));
+      if (links.childNodes.length) options.append(links);
+      const available = records.filter(a => key(a) === key(r) && a.tool === r.tool && a.way === r.way && a.repository === r.repository);
+      const metrics = [...new Map(available.map(a => [measurement(a), a])).entries()];
+      const draft = pinEditors.get(r.id) || {metric: measurement(r), capture: r.id};
+      const captures = ordered(available.filter(a => measurement(a) === draft.metric));
+      const selected = captures.find(a => a.id === draft.capture) || captures.at(-1);
+      if (metrics.length > 1) options.append(select('Measurement to add', 'listPinMetric', r.id, metrics.map(([mk, a]) => [mk, a.metricLabel + ' · ' + a.unit + ' · ' + a.scope + ' · ' + a.contract]), draft.metric));
+      if (captures.length > 1) options.append(select('Capture to add', 'listPinCapture', r.id, captures.map(a => [a.id,
+        a.version + ' · ' + date(a) + (a.proposed ? ' · Proposed PR #' + a.pr : '') + (a.phase ? ' · ' + a.phase + ' / ' + a.variant : '') + ' · ' + format(a.median, a.unit)]), selected.id));
+      if (selected && !state.pins.includes(selected.id)) {
+        if (captures.length === 1) {
+          const preview = [];
+          if (selected.version !== r.version) preview.push(selected.version);
+          if (date(selected) !== date(r)) preview.push(date(selected));
+          preview.push(format(selected.median, selected.unit)); options.append(e('p', 'list-meta list-capture-preview', preview.join(' · ')));
+        }
+        options.append(pinButton(selected));
+      }
+      const history = captures.filter(a => a.history && implementation(a) === implementation(selected || r));
+      if (history.length > 1) {
+        const plot = e('div', 'list-detail-history'); options.append(plot);
+        if (!options.hidden) {
+          viewFeatures.history = true;
+          if (history.some(r => r.proposed)) viewFeatures.proposal = true;
+          if (segments(history, model.unavailable, records).runners.length) viewFeatures.runners = true;
+        }
+        draws.push(() => chart(plot, box => drawHistory(box, history, selected?.id)));
+      }
+      options.append(button('Show recorded comparison', 'listShowSet', r.id, 'explorer-quiet'));
+      return options;
+    }
+    function pinGroup(values, draws) {
+      const first = values[0], group = e('section', 'list-pin-group');
+      const same = field => values.every(r => r[field] === first[field]);
+      const shared = Object.fromEntries(['wayLabel', 'count', 'report', 'createdAt', 'origin', 'phase', 'variant'].map(field => [field, same(field)]));
+      shared.date = values.every(r => date(r) === date(first)); shared.qualified = values.every(numeric);
+      group.dataset.pinMeasurement = measurement(first);
+      const context = e('div', 'list-case-context');
+      for (const text of [metricTitle(first), shared.wayLabel ? first.wayLabel : '', shared.date ? date(first) : '',
+        shared.phase && first.phase ? first.phase + (shared.variant && first.variant ? ' / ' + first.variant : '') : ''])
+        if (text) context.append(e('span', '', text));
+      const headings = e('div', 'list-pin-columns'); headings.append(context, e('span', 'list-row-note',
+        values.some(r => numeric(r) && r.min !== r.max) ? 'Median / observed range' : 'Median')); group.append(headings);
+      for (const r of values) {
+        const row = e('article', 'list-pin-row'); row.dataset.pinnedRecord = r.id;
+        const choose = e('label', 'list-pin-check'), check = e('input');
+        check.type = 'checkbox'; check.checked = state.selected.includes(r.id); check.dataset.listSelected = r.id; check.dataset.listControl = 'listSelected:' + r.id;
+        check.setAttribute('aria-label', 'Include ' + label(r) + ' in comparison'); choose.append(check);
+        const identity = e('div', 'list-pin-row-identity');
+        identity.append(e('span', 'list-record-label', r.toolLabel + (shared.wayLabel ? '' : ' / ' + r.wayLabel)), compactIdentity(r));
+        const notes = [];
+        if (!shared.date) notes.push(date(r));
+        if (!shared.phase && r.phase) notes.push(r.phase);
+        if (!shared.variant && r.variant) notes.push(r.variant === 'baseline' ? 'paired base' : r.variant);
+        if (values.some(a => a.tool === r.tool && a.way === r.way && a.capture !== r.capture)) notes.push(r.capture);
+        if (notes.length) identity.append(e('span', 'list-row-note', notes.join(' · ')));
+        const value = e('div', 'list-pin-row-value'); value.append(e('div', 'list-current-value', format(r.median, r.unit)));
+        if (observedRange(r)) value.append(e('span', 'list-row-note', observedRange(r)));
+        else if (!numeric(r)) identity.append(e('span', 'list-row-warning', r.reason || 'Unqualified or incomplete measurement'));
+        const details = pinDetails(r, draws, shared), toggle = button('Details', 'listPinDetails', r.id, 'explorer-quiet list-pin-detail-toggle');
+        toggle.setAttribute('aria-expanded', String(!details.hidden)); toggle.setAttribute('aria-controls', details.id);
+        const remove = button('×', 'listPin', r.id, 'explorer-quiet list-unpin'); remove.setAttribute('aria-label', 'Unpin ' + label(r));
+        row.append(choose, identity, value, toggle, remove, details); group.append(row);
+      }
+      const details = e('details', 'list-options'); details.dataset.listOptions = 'group:' + key(first) + measurement(first);
+      details.open = openOptions.has(details.dataset.listOptions); details.append(e('summary', '', 'Measurement and evidence'));
+      details.append(e('p', 'list-meta', first.scope), e('p', 'list-meta', 'Contract: ' + first.contract + ' · ' +
+        (first.direction === 'higher' ? 'Higher' : 'Lower') + ' is better' + (shared.qualified ? ' · Qualified' : '') + (shared.count ? ' · ' + first.count + ' samples per capture' : '') +
+        '.'));
+      const captured = [];
+      if (shared.createdAt && first.createdAt) captured.push('Captured ' + first.createdAt);
+      if (shared.origin && first.origin) captured.push(first.origin);
+      if (captured.length) details.append(e('p', 'list-meta', captured.join(' · ')));
+      if (shared.report) details.append(link('Report and evidence', path(first.report)));
+      group.append(details); return group;
     }
     function renderPins(draws) {
+      board.hidden = !state.pins.length && !state.error;
+      const jump = byId('list-pin-jump'); jump.hidden = board.hidden;
+      jump.textContent = state.pins.length ? 'Pinned (' + state.pins.length + ') ↑' : 'Pin issue ↑';
+      if (board.hidden) { board.replaceChildren(); return; }
       board.replaceChildren(); const selected = state.pins.filter(id => state.selected.includes(id)).map(id => lookup.get(id));
       const ready = readiness(selected, model.comparisons); if (!ready.ready) state.compare = false;
       const heading = e('div', 'list-pin-heading'), actions = e('div', 'list-pin-actions');
-      heading.append(e('h2', '', 'Pinned measurements')); actions.append(e('span', 'list-meta', state.pins.length + ' pinned · ' + selected.length + ' selected'));
+      heading.append(e('h2', '', state.pins.length ? 'Pinned measurements (' + state.pins.length + ')' : 'Pinned measurements'));
+      if (state.pins.length > 1 && selected.length !== state.pins.length) actions.append(e('span', 'list-meta', selected.length + ' of ' + state.pins.length + ' selected'));
       const compare = button(state.compare ? 'Back to separate panels' : 'Compare selection', 'listComparePins', 'true', 'explorer-button explorer-primary');
-      compare.disabled = !state.compare && !ready.ready; actions.append(compare); heading.append(actions); board.append(heading);
-      board.append(e('p', 'list-pin-status', state.error || (state.pins.length ? ready.message : 'Pin an exact capture from any history or comparison.')));
+      compare.disabled = !state.compare && !ready.ready; if (state.pins.length > 1) actions.append(compare); heading.append(actions); board.append(heading);
+      if (state.error || state.pins.length > 1 && !ready.ready) board.append(e('p', 'list-pin-status', state.error || ready.message));
       if (state.compare) {
         const ref = ready.references.find(r => r.id === state.pinReference) || ready.references.find(r => r.variant === 'baseline') || ready.references[0];
+        pinnedComparison = comparisonKey(selected, ref?.id, ready.kind);
         board.append(e('h3', '', workloadTitle(selected[0])));
+        const common = sharedFields(selected, ['wayLabel']), context = e('div', 'list-case-context');
+        for (const text of [metricTitle(selected[0]), (selected[0].direction === 'higher' ? 'Higher' : 'Lower') + ' is better', common.wayLabel,
+          selected.every(r => date(r) === date(selected[0])) ? date(selected[0]) : '']) if (text) context.append(e('span', '', text));
+        board.append(context);
         comparePanel(board, selected, ref?.id, ready.kind, 'pins', draws, ready.references); board.append(evidence(selected));
       } else {
-        const grid = e('div', 'list-pin-grid');
+        const groups = new Map();
         for (const id of state.pins) {
-          const r = lookup.get(id), card = e('article', 'list-pin-card'); card.dataset.pinnedRecord = id;
-          const top = e('div', 'list-pin-card-heading'), choose = e('label', 'list-pin-check'), check = e('input');
-          check.type = 'checkbox'; check.checked = state.selected.includes(id); check.dataset.listSelected = id; check.dataset.listControl = 'listSelected:' + id;
-          check.setAttribute('aria-label', 'Include ' + label(r) + ' in comparison'); choose.append(check, document.createTextNode('Use in comparison'));
-          top.append(choose, button('Remove', 'listPin', id, 'explorer-quiet')); card.append(top,
-            e('p', 'list-meta', workloadTitle(r)),
-            e('h3', '', label(r)), e('p', 'list-pin-value', format(r.median, r.unit)),
-            e('p', 'list-meta', r.metricLabel + ' · ' + r.unit + ' · ' + r.contract), identityLinks(r),
-            e('p', 'list-meta', r.scope), e('p', 'list-meta', numeric(r) ? 'Qualified · ' + r.count + ' samples' : r.reason || 'Unqualified'), link('Report and evidence', path(r.report)));
-          grid.append(card);
+          const r = lookup.get(id), workload = key(r), metric = measurement(r);
+          if (!groups.has(workload)) groups.set(workload, new Map());
+          const metrics = groups.get(workload); if (!metrics.has(metric)) metrics.set(metric, []); metrics.get(metric).push(r);
         }
-        board.append(grid);
+        for (const metrics of groups.values()) {
+          const workload = e('section', 'list-pin-workload'); workload.append(e('h3', '', workloadTitle(metrics.values().next().value[0])));
+          for (const values of metrics.values()) workload.append(pinGroup(values, draws)); board.append(workload);
+        }
       }
-      byId('list-pin-jump').textContent = 'Pinned (' + state.pins.length + ') ↑';
+    }
+    function renderHelp() {
+      const help = byId('list-help'), content = byId('list-help-content'); content.replaceChildren();
+      help.hidden = !Object.keys(viewFeatures).length;
+      if (viewFeatures.history) content.append(e('p', 'list-meta', 'Each tool has its own capture order and scale. Select a point to choose its capture.'));
+      if (viewFeatures.paired) content.append(e('p', 'list-meta', 'Paired charts show retained multipliers on a logarithmic scale. Select a tool or point to set the 1× reference.'));
+      if (viewFeatures.absolute) content.append(e('p', 'list-meta', 'Independent captures show absolute values and have no paired multiplier.'));
+      const legend = [];
+      if (viewFeatures.proposal) legend.push('◇ Proposed PR');
+      if (viewFeatures.runners) legend.push('Dotted connector: runner changed');
+      if (legend.length) content.append(e('p', 'list-meta', legend.join(' · ')));
+      content.append(e('p', 'list-meta', 'Ranges show observed min–max, not confidence intervals. Capture dates are not commit dates.'));
     }
     function scope(rows) {
       return rows.filter(row => (!state.benchmark || row.item.benchmark_id === state.benchmark) && (!state.case || row.item.case_id === state.case) &&
         (!state.tag || [...(row.item.tags || []), ...(Array.isArray(row.item.metadata?.topic) ? row.item.metadata.topic : []), ...row.contexts.flatMap(c => Array.isArray(c?.metadata?.topic) ? c.metadata.topic : [])].includes(state.tag)));
     }
     function render(rows, groups) {
+      // Toggle events are queued by the browser. Read the current disclosure state
+      // before a fast select/change can rebuild it ahead of the queued event.
+      for (const n of root.querySelectorAll('[data-list-options]')) {
+        if (n.open) openOptions.add(n.dataset.listOptions); else openOptions.delete(n.dataset.listOptions);
+      }
       const activeNode = document.activeElement, active = activeNode?.dataset.listControl;
       const activeCase = activeNode?.closest('[data-list-case]')?.dataset.listCase;
       const activeEvidence = activeNode?.closest('[data-list-evidence]')?.dataset.listEvidence;
       const activeBoard = Boolean(activeNode?.closest('#list-pins'));
       for (const plot of plots) { observer?.unobserve(plot); resize?.unobserve(plot); } plots = new Set();
-      const draws = []; renderPins(draws);
+      const draws = []; pinnedComparison = ''; viewFeatures = {}; renderPins(draws);
       root.querySelectorAll('[data-list-view]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.listView === state.view)));
       const scopeHost = byId('list-scope'); scopeHost.replaceChildren();
       for (const [field, title] of [['benchmark', 'Benchmark'], ['case', 'Workload'], ['tag', 'Tag']]) if (state[field]) scopeHost.append(button(title + ': ' + state[field] + ' ×', 'listClearScope', field));
@@ -478,17 +666,22 @@ const GammabenchList = (() => {
         for (const row of group.rows) results.append(casePanel(row, draws));
       }
       if (!rows.length) results.append(e('p', 'explorer-empty', 'No matching benchmark or workload. Clear a filter to broaden the list.'));
-      draws.forEach(draw => draw());
-      if (active) [...root.querySelectorAll('[data-list-control]')].find(node => node.dataset.listControl === active &&
-        node.closest('[data-list-case]')?.dataset.listCase === activeCase &&
-        node.closest('[data-list-evidence]')?.dataset.listEvidence === activeEvidence &&
-        Boolean(node.closest('#list-pins')) === activeBoard)?.focus({preventScroll: true});
+      renderHelp(); draws.forEach(draw => draw());
+      if (active) {
+        const replacement = [...root.querySelectorAll('[data-list-control]')].find(node => node.dataset.listControl === active &&
+          node.closest('[data-list-case]')?.dataset.listCase === activeCase &&
+          node.closest('[data-list-evidence]')?.dataset.listEvidence === activeEvidence &&
+          Boolean(node.closest('#list-pins')) === activeBoard);
+        const collapsed = activeCase && [...root.querySelectorAll('.list-case-pinned')].find(node => node.dataset.listCase === activeCase)?.querySelector('.list-duplicate a');
+        (replacement || collapsed)?.focus({preventScroll: true});
+      }
     }
     root.addEventListener('toggle', event => {
       const id = event.target.dataset?.listEvidence; if (id) { if (event.target.open) openEvidence.add(id); else openEvidence.delete(id); }
+      const options = event.target.dataset?.listOptions; if (options) { if (event.target.open) openOptions.add(options); else openOptions.delete(options); }
     }, true);
     root.addEventListener('click', event => {
-      const target = event.target.closest('button, [data-list-record]'); if (!target) return;
+      const target = event.target.closest('button, a, [data-list-record], [data-list-reference-row]'); if (!target || target.localName === 'a') return;
       const d = target.dataset; let changed = true;
       if (d.listView) state.view = d.listView;
       else if (d.listTag) { state.tag = d.listTag; state.benchmark = state.case = ''; }
@@ -498,6 +691,17 @@ const GammabenchList = (() => {
         else if (state.pins.length < 100) { state.pins.push(d.listPin); state.selected.push(d.listPin); }
         state.compare = false;
       } else if (d.listComparePins) state.compare = !state.compare;
+      else if (d.listExpandComparison) {
+        if (expandedComparisons.has(d.listExpandComparison)) expandedComparisons.delete(d.listExpandComparison); else expandedComparisons.add(d.listExpandComparison);
+      }
+      else if (d.listPinDetails) {
+        const id = 'pin:' + d.listPinDetails; if (openOptions.has(id)) openOptions.delete(id); else openOptions.add(id);
+      }
+      else if (d.listUseReference || d.listReferenceRow) {
+        const id = d.listUseReference || d.listReferenceRow, referenceKey = d.referenceKey;
+        if (referenceKey === 'pins') state.pinReference = id;
+        else state.references[referenceKey] = id;
+      }
       else if ((d.listShowSet || d.listRecord) && lookup.has(d.listShowSet || d.listRecord)) {
         const r = lookup.get(d.listShowSet || d.listRecord), caseKey = key(r), mk = measurement(r);
         state.choices[caseKey + mk + implementation(r)] = r.id;
@@ -512,6 +716,12 @@ const GammabenchList = (() => {
       else if (d.listCapture) state.choices[d.listCapture] = t.value;
       else if (d.listReference) state.references[d.listReference] = t.value;
       else if (d.listPinReference) state.pinReference = t.value;
+      else if (d.listPinMetric || d.listPinCapture) {
+        const id = d.listPinMetric || d.listPinCapture, r = lookup.get(id);
+        const draft = pinEditors.get(id) || {metric: measurement(r), capture: id};
+        if (d.listPinMetric) { draft.metric = t.value; draft.capture = ''; } else draft.capture = t.value;
+        pinEditors.set(id, draft);
+      }
       else if (d.listSelected) { state.selected = t.checked ? [...new Set([...state.selected, d.listSelected])] : state.selected.filter(id => id !== d.listSelected); state.compare = false; }
       else changed = false;
       if (changed) { remember(); refresh(); }
@@ -522,6 +732,7 @@ const GammabenchList = (() => {
     });
     return {scope, render, clearScope: () => { state.benchmark = state.case = state.tag = ''; remember(false); }};
   }
-  return {key, measurement, implementation, hydrate, numeric, ordered, segments, paired, readiness, matchingRecords, format, decode, encode, create};
+  return {key, measurement, implementation, hydrate, numeric, ordered, segments, paired, readiness, matchingRecords, format,
+    sharedFields, evidenceGroups, comparisonKey, observedRange, metricTitle, decode, encode, create};
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = GammabenchList;

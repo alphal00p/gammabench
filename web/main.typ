@@ -18,16 +18,22 @@
 #let home = if preview == none { "index.html" } else { "explore.html" }
 
 #let preview-notice(root) = if preview != none {
-  el("aside", class: "preview-notice", attrs: ("aria-label": "Proposed PR measurement"))[
-    #el("strong", "Proposed PR #" + str(preview.ci.pr) + " · " + preview.ci.candidate.slice(0, 12))
-    #el("p", "Gate: " + ("Passed", "Regression or correctness failure", "Inconclusive").at(preview.status))
-    #el("p")[Main history + this PR's proposed candidate ◇]
+  el("aside", class: "preview-notice", attrs: ("aria-label": "Proposed PR measurement",
+    "data-proposed-candidate": preview.ci.candidate, "data-proposed-repository": preview.ci.repository_url,
+    "data-captured-at": preview.at("captured_at", default: "")))[
+    #el("div", class: "preview-heading")[
+      #el("strong")[#link(preview.ci.repository_url + "/pull/" + str(preview.ci.pr), "Proposed PR #" + str(preview.ci.pr))]
+      #link(preview.ci.repository_url + "/commit/" + preview.ci.candidate, preview.ci.candidate.slice(0, 12))
+      #el("span", "Gate: " + ("Passed", "Regression or correctness failure", "Inconclusive").at(preview.status))
+      #if preview.at("captured_at", default: "") != "" {
+        el("span", "Captured " + preview.captured_at.split("T").first() + " UTC")
+      }
+    ]
     #if preview.snapshots.len() == 0 { el("p")[No candidate measurements are available for this run.] }
     #if preview.at("missing_cases", default: ()).len() > 0 {
       el("p", "PR measurements unavailable for: " + preview.missing_cases.join(", ") + ".")
     }
     #el("p")[
-      #link(preview.ci.repository_url + "/pull/" + str(preview.ci.pr))[Pull request] ·
       #link(root + "summary.html")[Run summary] ·
       #link(root + "../../runs.html")[All runs for this PR] ·
       #link("https://alphal00p.github.io/gammabench/ci-history/")[Main history]
@@ -37,8 +43,8 @@
 
 #let list-page(root: "", assets: "assets/") = bench-document(
   "Benchmarks", "Independent tool histories, recorded comparisons and exact measurement pins.",
-  assets: assets, home: root + home, scripts: ("list.js?ui=list-v1", "explorer.js?ui=list-v1"),
-  styles: ("explorer.css?ui=list-v1", "list.css?ui=list-v1"),
+  assets: assets, home: root + home, scripts: ("list.js?ui=compact-v2", "explorer.js?ui=list-v1"),
+  styles: ("explorer.css?ui=list-v1", "list.css?ui=compact-v2"),
 )[
   #preview-notice(root)
   #explorer(catalog, root: root, model: model)
