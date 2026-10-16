@@ -59,6 +59,28 @@ def inventory(root):
     return result
 
 
+def _report_matches(recorded, recomputed, policy):
+    if recorded == recomputed:
+        return True
+    # Early schema-2 gates predate these additive diagnostics. Their ordinary
+    # numeric qualification has no certificate that could change the mismatch
+    # count. Keep every outcome and statistic exact; never strip arbitrary keys.
+    diagnostics = {"strict_correctness_mismatches", "certified_zero_components"}
+    if (
+        isinstance(recorded, dict)
+        and not diagnostics.intersection(recorded)
+        and policy.get("correctness_format", "number") == "number"
+        and policy.get("certified_zero") is None
+        and recomputed["certified_zero_components"] == 0
+        and recomputed["strict_correctness_mismatches"]
+        == recomputed["correctness_mismatches"]
+    ):
+        return recorded == {
+            key: value for key, value in recomputed.items() if key not in diagnostics
+        }
+    return False
+
+
 def validate_bundle(bundle, expected=None):
     bundle = Path(bundle)
     files = inventory(bundle)
@@ -106,14 +128,16 @@ def validate_bundle(bundle, expected=None):
                 or snapshot["provenance"].get("ci_gate", {}).get("phase") != phase
             ):
                 raise ValueError("Snapshot source identity differs from its delivery")
-            for side in ("baseline", "candidate"):
-                if (
-                    snapshot["provenance"]["ci_gate"]["identity"][side]["commit"]
-                    != ci[side]
-                ):
-                    raise ValueError("Measured commit differs from its delivery")
             proof = snapshot["provenance"]["ci_gate"]
             suite = json.loads((path / "suite.json").read_text())
+            subjects = proof["identity"]
+            if (
+                subjects != suite.get("gate")
+                or subjects["candidate"]["commit"] != ci["candidate"]
+                or subjects["baseline"]["commit"]
+                not in (ci["baseline"], ci["candidate"])
+            ):
+                raise ValueError("Measured commit differs from its delivery")
             policy = validate_policy(proof["policy"], suite)
             if original is None:
                 original = (policy, proof["identity"])
@@ -126,7 +150,7 @@ def validate_bundle(bundle, expected=None):
                 recomputed = checker.analyze(data)
             except ValueError:
                 recomputed = checker.analyze(None)
-            if proof.get("report") != recomputed:
+            if not _report_matches(proof.get("report"), recomputed, policy):
                 raise ValueError(
                     "Recorded gate outcome disagrees with its numeric evidence"
                 )
@@ -134,7 +158,7 @@ def validate_bundle(bundle, expected=None):
             allowed.add(case + "/" + phase + "/files.sha256.json")
             snapshots.append(path)
         status = gate["report"]["status"]
-        if gate["report"] != recomputed:
+        if not _report_matches(gate["report"], recomputed, policy):
             raise ValueError("Final gate outcome disagrees with its sealed phases")
         if status not in (0, 1, 2):
             raise ValueError("Unknown gate status")
@@ -261,13 +285,22 @@ def ingest(bundle, root, *, channel, current_head=None, expected=None):
         report = _register(
             content, case, snapshots, capture_id, preview=channel == "pr"
         )
+        subjects = (
+            load(snapshots[0])["provenance"]["ci_gate"]["identity"]
+            if snapshots
+            else None
+        )
+        baseline = subjects["baseline"]["commit"] if subjects else ci["baseline"]
         rows.append(
             {
                 "title": case,
                 "status": status,
                 "href": report or "",
                 "candidate": ci["candidate"],
-                "baseline": ci["baseline"],
+                "baseline": baseline,
+                "comparison": "within-candidate"
+                if subjects and baseline == ci["candidate"]
+                else "revision",
             }
         )
     data = {

@@ -13,7 +13,7 @@ gammabench gate prepared/suite.json results/case \
 ```
 
 The policy declares schema version 1, five pairs, a total budget of at most 240
-seconds, relative/absolute thresholds for each metric, output groups, a reference
+seconds by default, relative/absolute thresholds for each metric, output groups, a reference
 group and numerical tolerances. Five discovery pairs alternate AB/BA; a regression
 signal requests five confirmation pairs beginning BA under the original deadline.
 Confirmation is retained separately and never pooled into discovery statistics.
@@ -29,6 +29,52 @@ group must agree with its own reference and the baseline reference within the
 declared tolerance; every reference point must be finite and nonzero. Reports
 recompute this qualification from retained records rather than trusting a pass
 flag. This is numerical qualification, not an exact symbolic equivalence proof.
+
+An explicitly selected `budget_class: "slow"` permits a bounded case budget up
+to 7200 seconds. It does not change the default fast limit, pair count, shared
+deadline, thresholds or confirmation procedure. Preparation performed by the
+adapter remains inside that shared deadline even when it is outside a reported
+native metric.
+By default a numerical mismatch already fails the gate and stops further timing
+confirmation. An explicit `confirm_on_correctness_failure: true` retains the
+independent confirmation when a timing regression signal accompanies that
+mismatch; the numerical failure remains a failure throughout.
+
+Policies may opt into `correctness_format: "decimal"`. Every output component
+must then be a finite decimal string (at most 1024 characters); metrics and
+metadata remain finite JSON numbers. Qualification uses decimal arithmetic,
+without passing small components through binary64. Invalid strings, extreme
+exponents and arithmetic underflow fail qualification. The original strings
+remain in sealed records and are used again when qualifying a loaded snapshot.
+
+An adapter with an independently established analytic zero may declare
+`certified_zero` with a `certificate` object containing an identifier `id` and
+complete `sha256`, plus a `components` list of distinct `index` and
+`absolute_bound` entries. Bounds use the output's number/decimal format; decimal
+bounds may contain up to 2048 characters to retain full derivation precision. Every
+adapter result must carry the exact same `certificate`; missing or different
+witnesses fail. The retained adapter owns the domain proof, physical dimensions,
+source/settings checks and witness construction. Gammabench checks each declared
+component against its zero bound separately for each side and output group,
+including when two contaminated values agree. Other components retain the
+ordinary relative/absolute comparison. Reports preserve raw outputs,
+`strict_correctness_mismatches` before the certificate and the number of
+`certified_zero_components`. No component is rounded or replaced with zero.
+
+For example, a dimensional source proof can produce this numeric contract:
+
+```json
+{
+  "correctness_format": "decimal",
+  "certified_zero": {
+    "certificate": {"id": "source-zero-v1", "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},
+    "components": [{"index": 0, "absolute_bound": "1e-150"}]
+  }
+}
+```
+
+The bound is illustrative; the suite must derive its own bound and retain the
+supporting inputs. A policy declaration alone is not proof of the physical zero.
 
 The generic process runner remains unchanged by default. Gate suites explicitly
 declare their clocks and do not acquire an implicit whole-adapter process metric.
@@ -58,6 +104,23 @@ registration. PR captures append to the data-only `pr-results` branch, under
 The branch index selects the newest eligible capture for the current PR head.
 Old, failed and inconclusive captures remain accessible. A merged PR is not
 relabeled as a main measurement: main runs again against the previous main SHA.
+
+The trusted publisher must support the numerical policy used by the measurement
+before that capture can be published. It recomputes every sealed phase using its
+own framework code; it never loads executable code from the artifact or fetches
+the artifact's declared framework revision to execute it. Early schema-2 reports
+without the two additive certificate diagnostics remain valid only for ordinary
+numeric qualification without a certificate. All recorded outcomes and numeric
+statistics must still agree exactly, and partially missing diagnostics fail.
+
+Each case's candidate must match the originating run's candidate commit. Its
+measured baseline may be the run's base commit or the candidate commit itself,
+as retained consistently in the suite and sealed gate identity. The latter is a
+comparison within the candidate, such as two implementation modes at one commit;
+the summary labels it explicitly and records the actual measured baseline. The
+run's base SHA remains source provenance and is not substituted into that case.
+Unrelated measured revisions are rejected. Discovery and confirmation must keep
+the same policy and measured identities for either kind of comparison.
 
 History shows the candidate's discovery measurement for each run. Baselines
 and independent confirmations remain in Compare and Evidence; neither is

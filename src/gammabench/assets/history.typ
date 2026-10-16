@@ -163,6 +163,8 @@
     "data-commit": if history-commit(source.revision) { source.revision } else { "" },
     "data-reason": record.reason)
   let ci = record.snapshot.provenance.at("ci", default: (:))
+  let measured-baseline = record.snapshot.provenance.at("ci_gate", default: (:))
+    .at("identity", default: (:)).at("baseline", default: (:)).at("commit", default: none)
   let pr = if record.proposal != none { record.proposal.pr } else { ci.at("pr", default: none) }
   let pulls = if source.repository.match(regex("^https://github\\.com/[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$")) == none { () }
   else if type(pr) == int and pr > 0 { (pr,) } else if history-commit(source.revision) {
@@ -172,7 +174,7 @@
   attrs.insert("data-pull-requests", json.encode(pulls))
   if ci.at("run_id", default: none) != none and ci.at("run_attempt", default: none) != none {
     attrs += ("data-run-id": str(ci.run_id), "data-run-attempt": str(ci.run_attempt),
-      "data-baseline-commit": ci.baseline)
+      "data-baseline-commit": if measured-baseline != none { measured-baseline } else { ci.baseline })
   }
   if record.paired != none {
     attrs.insert("data-paired-ratio", json.encode(record.paired.ratio.median))
@@ -180,7 +182,7 @@
   attrs.insert("data-history-role", if record.proposal == none { "main" } else { "proposed" })
   if record.proposal != none {
     attrs.insert("data-pr", str(record.proposal.pr))
-    attrs.insert("data-baseline-commit", record.proposal.baseline)
+    attrs.insert("data-baseline-commit", if measured-baseline != none { measured-baseline } else { record.proposal.baseline })
   }
   let comparison = comparisons.at(item.snapshot_id, default: none)
   if comparison != none { attrs.insert("data-comparison-href", comparison) }

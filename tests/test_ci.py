@@ -53,6 +53,8 @@ class PublicationTests(unittest.TestCase):
         mode="clean",
         baseline="a" * 40,
         candidate="b" * 40,
+        measured_baseline=None,
+        measured_candidate=None,
     ):
         ci = {
             "repository": "alphal00p/gammaloop",
@@ -66,8 +68,10 @@ class PublicationTests(unittest.TestCase):
             "pr": 123 if event == "pull_request" else None,
         }
         self.fixture.suite["ci"] = ci
-        self.fixture.suite["gate"]["baseline"]["commit"] = baseline
-        self.fixture.suite["gate"]["candidate"]["commit"] = candidate
+        self.fixture.suite["gate"]["baseline"]["commit"] = measured_baseline or baseline
+        self.fixture.suite["gate"]["candidate"]["commit"] = (
+            measured_candidate or candidate
+        )
         status, public = self.fixture.capture(mode, label=f"ci-{event}-{run_id}")
         bundle = self.root / "bundle"
         bundle.mkdir()
@@ -77,6 +81,90 @@ class PublicationTests(unittest.TestCase):
             {"schema_version": 1, "ci": ci, "cases": ["demo"], "status": status},
         )
         return bundle
+
+    def test_legacy_reports_revalidate_without_rewriting_evidence(self):
+        from gammabench.gate_policy import PairedGate
+
+        analyze = PairedGate.analyze
+
+        def legacy(checker, data):
+            report = analyze(checker, data)
+            del report["strict_correctness_mismatches"]
+            del report["certified_zero_components"]
+            return report
+
+        with patch.object(PairedGate, "analyze", legacy):
+            bundle = self.bundle(mode="wrong")
+        before = inventory(bundle)
+        run, _, _ = validate_bundle(bundle)
+        self.assertEqual(run["status"], 1)
+        self.assertEqual(inventory(bundle), before)
+        gate_path = bundle / "demo/gate.json"
+        gate = json.loads(gate_path.read_text())
+        gate["report"]["metrics"]["seconds"]["discovery"]["candidate_median"] += 1
+        write_json(gate_path, gate)
+        with self.assertRaisesRegex(ValueError, "Final gate outcome"):
+            validate_bundle(bundle)
+
+    def test_missing_or_incorrect_new_diagnostics_are_rejected(self):
+        bundle = self.bundle()
+        gate_path = bundle / "demo/gate.json"
+        original = json.loads(gate_path.read_text())
+        for key in ("strict_correctness_mismatches", "certified_zero_components"):
+            for remove in (False, True):
+                gate = json.loads(json.dumps(original))
+                if remove:
+                    del gate["report"][key]
+                else:
+                    gate["report"][key] += 1
+                write_json(gate_path, gate)
+                with self.assertRaisesRegex(ValueError, "Final gate outcome"):
+                    validate_bundle(bundle)
+
+    def test_decimal_reports_cannot_use_the_legacy_diagnostic_exception(self):
+        from gammabench.ci import _report_matches
+
+        modern = {
+            "status": 0,
+            "correctness_mismatches": 0,
+            "strict_correctness_mismatches": 0,
+            "certified_zero_components": 0,
+        }
+        legacy = {"status": 0, "correctness_mismatches": 0}
+        self.assertFalse(
+            _report_matches(legacy, modern, {"correctness_format": "decimal"})
+        )
+        self.assertFalse(_report_matches(legacy, modern, {"certified_zero": {}}))
+
+    def test_within_candidate_comparison_keeps_actual_measured_identity(self):
+        bundle = self.bundle(measured_baseline="b" * 40)
+        run, _, _ = validate_bundle(bundle)
+        self.assertEqual(run["ci"]["baseline"], "a" * 40)
+        result = ingest(bundle, self.checkout, channel="pr", current_head="b" * 40)
+        summary = json.loads((self.checkout / result["path"] / "run.json").read_text())
+        self.assertEqual(summary["rows"][0]["baseline"], "b" * 40)
+        self.assertEqual(summary["rows"][0]["comparison"], "within-candidate")
+        site = self.root / "site"
+        site.mkdir()
+        assemble_previews(self.checkout, site, ROOT, main_root=self.checkout)
+        page = site / result["path"] / "summary.html"
+        self.assertIn("Comparison within candidate", page.read_text())
+        from test_history_view import HistoryElements
+
+        history = HistoryElements(
+            (site / result["path"] / "ci-history/index.html").read_text()
+        )
+        self.assertEqual(history.points[0]["data-baseline-commit"], "b" * 40)
+
+    def test_unrelated_measured_baseline_is_rejected(self):
+        bundle = self.bundle(measured_baseline="c" * 40)
+        with self.assertRaisesRegex(ValueError, "Measured commit"):
+            validate_bundle(bundle)
+
+    def test_measured_candidate_must_match_the_original_run(self):
+        bundle = self.bundle(measured_candidate="c" * 40)
+        with self.assertRaisesRegex(ValueError, "Measured commit"):
+            validate_bundle(bundle)
 
     def test_pr_capture_is_isolated_idempotent_and_renders_nested_site(self):
         bundle = self.bundle()

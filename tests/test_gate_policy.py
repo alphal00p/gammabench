@@ -101,6 +101,129 @@ class PerformanceGateTests(unittest.TestCase):
             with self.subTest(data=data):
                 self.assertEqual(self.gate.analyze(data)["status"], 0)
 
+    def test_decimal_qualification_preserves_tiny_components_and_rejects_rounding(self):
+        data = measurements(methods=EVALUATOR_METHODS)
+        data["correctness_tolerance"] = {"relative": 1e-5, "absolute": 0}
+        for pair in data["discovery"]["pairs"]:
+            for side in ("baseline", "candidate"):
+                pair[side + "_output"] = {
+                    m: ["1e-411", "3e-158"] for m in EVALUATOR_METHODS
+                }
+        gate = PairedGate(
+            BASELINE,
+            CANDIDATE,
+            THRESHOLDS,
+            EVALUATOR_METHODS,
+            correctness_format="decimal",
+        )
+        self.assertEqual(gate.analyze(data)["status"], 0)
+        original = copy.deepcopy(data)
+        for changed in ("0", "1.01e-411"):
+            data["discovery"]["pairs"][0]["candidate_output"]["Summed"][0] = changed
+            self.assertEqual(gate.analyze(data)["correctness_mismatches"], 1)
+        for invalid in (0.0, "NaN", "Infinity", "1e-1005000", "1e1005000", "1" * 1025):
+            data["discovery"]["pairs"][0]["candidate_output"]["Summed"][0] = invalid
+            self.assertEqual(gate.analyze(data)["invalid_input"], 1)
+        self.assertEqual(
+            original["discovery"]["pairs"][0]["candidate_output"]["Summed"],
+            ["1e-411", "3e-158"],
+        )
+        self.assertEqual(self.gate.analyze(original)["invalid_input"], 1)
+
+    def test_certified_zero_is_component_local_and_requires_the_exact_witness(self):
+        data = measurements()
+        data["correctness_tolerance"] = {"relative": 1e-5, "absolute": 0}
+        certificate = {"id": "analytic-zero-v1", "sha256": "a" * 64}
+        policy = {
+            "certificate": certificate,
+            "components": [{"index": 0, "absolute_bound": "1e-150"}],
+        }
+        gate = PairedGate(
+            BASELINE,
+            CANDIDATE,
+            THRESHOLDS,
+            EVALUATOR_METHODS,
+            correctness_format="decimal",
+            certified_zero=policy,
+        )
+        for pair in data["discovery"]["pairs"]:
+            for side in ("baseline", "candidate"):
+                pair[side + "_certificate"] = certificate.copy()
+                pair[side + "_output"] = {
+                    "SingleParametric": [
+                        "1e-411" if side == "baseline" else "2e-411",
+                        "3e-158",
+                    ]
+                }
+        original = copy.deepcopy(data)
+        report = gate.analyze(data)
+        self.assertEqual(report["status"], 0)
+        self.assertEqual(report["strict_correctness_mismatches"], 5)
+        self.assertEqual(report["certified_zero_components"], 1)
+        self.assertEqual(data, original)
+        for before, after in (("2e-150", "0"), ("0", "2e-150"), ("2e-150", "2e-150")):
+            changed = copy.deepcopy(data)
+            pair = changed["discovery"]["pairs"][0]
+            pair["baseline_output"]["SingleParametric"][0] = before
+            pair["candidate_output"]["SingleParametric"][0] = after
+            self.assertGreater(gate.analyze(changed)["correctness_mismatches"], 0)
+        changed = copy.deepcopy(data)
+        changed["discovery"]["pairs"][0]["candidate_output"]["SingleParametric"][1] = (
+            "3.01e-158"
+        )
+        self.assertEqual(gate.analyze(changed)["correctness_mismatches"], 1)
+        for wrong in (
+            None,
+            {"id": "different", "sha256": "a" * 64},
+            {"id": "analytic-zero-v1", "sha256": "b" * 64},
+        ):
+            changed = copy.deepcopy(data)
+            changed["discovery"]["pairs"][0]["candidate_certificate"] = wrong
+            self.assertEqual(gate.analyze(changed)["invalid_input"], 1)
+        changed = copy.deepcopy(data)
+        del changed["discovery"]["pairs"][0]["candidate_certificate"]
+        self.assertEqual(gate.analyze(changed)["invalid_input"], 1)
+        for invalid in (
+            [],
+            [{"index": True, "absolute_bound": "1e-150"}],
+            [{"index": -1, "absolute_bound": "1e-150"}],
+            [{"index": 0, "absolute_bound": "-1e-150"}],
+            [{"index": 0, "absolute_bound": 0.0}],
+            policy["components"] * 2,
+        ):
+            with self.assertRaises(ValueError):
+                PairedGate(
+                    BASELINE,
+                    CANDIDATE,
+                    THRESHOLDS,
+                    EVALUATOR_METHODS,
+                    correctness_format="decimal",
+                    certified_zero=policy | {"components": invalid},
+                )
+        absent = PairedGate(
+            BASELINE,
+            CANDIDATE,
+            THRESHOLDS,
+            EVALUATOR_METHODS,
+            correctness_format="decimal",
+            certified_zero=policy
+            | {"components": [{"index": 2, "absolute_bound": "1e-150"}]},
+        )
+        self.assertEqual(absent.analyze(data)["invalid_input"], 1)
+        # Bounds may retain a 1024-significant-digit derivation plus its
+        # exponent without rounding the declared policy to fit output width.
+        exact_bound = "1." + "0" * 1023 + "e-150"
+        wide_bound = PairedGate(
+            BASELINE,
+            CANDIDATE,
+            THRESHOLDS,
+            EVALUATOR_METHODS,
+            correctness_format="decimal",
+            certified_zero=policy
+            | {"components": [{"index": 0, "absolute_bound": exact_bound}]},
+        )
+        self.assertEqual(wide_bound.analyze(data)["status"], 0)
+
     def test_regression_needs_independent_confirmation(self):
         report = self.gate.analyze(measurements(13.0, 13e-6))
         self.assertEqual(report["status"], 2)
