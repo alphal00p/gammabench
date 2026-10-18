@@ -197,10 +197,17 @@ actual source identity. Versioned source archives keep their archive labels and
 pins; unknown or dirty source captures remain evidence. Capture dates are not
 commit dates, and observed min/max ranges are not confidence intervals.
 
-**Pinned measurements** appears above search and the results after the first pin.
+**Pinned benchmarks** appears above search and the results after the first pin.
+Pin several workloads to keep their plots visible together, including benchmarks
+with different tools. Each workload and measurement has its own **History / Compare**
+switch; filtering or switching the list view does not change pinned plots.
 A pin retains the exact
 benchmark, workload, metric, tool/implementation, version, snapshot and recorded
-comparison identity. Select a subset of pins and choose **Compare selection**.
+comparison identity. History shows the pinned implementations' own captures and
+starts on the pinned capture. Compare shows its retained set, including the
+baseline and other tools; selected compatible pins use their qualified paired
+comparison or matching independent absolute values. Recorded pairings never cross
+sets. Selection and provenance controls are in **Captures and options**.
 A qualified recorded set uses its stored candidate/reference multiplier, shown
 prominently with an explicit **1× reference** and absolute medians underneath.
 Both ratio directions come from retained paired analysis, not browser arithmetic.
@@ -210,10 +217,10 @@ captures cannot acquire a ranking. Pins survive filtering, view changes and
 shareable URL restoration without being replaced by newer measurements.
 Pins share one workload/measurement header and use compact capture rows. Common
 dates, implementation labels, scope, contract and report links appear once.
-Each row shows its source link, median and observed range; **Details** exposes
-provenance, full history and additional metric/capture choices. These choices add
+Each capture row shows its source link, median and observed range; **Details** exposes
+provenance and additional metric/capture choices. These choices add
 an explicit new pin and never replace an existing pin automatically.
-An exact copy of the pinned comparison collapses to a link in the list, with
+An exact copy of a pinned comparison or history collapses to a link in the list, with
 **Show here** available. Different capture sets, references and comparison kinds
 remain visible.
 
