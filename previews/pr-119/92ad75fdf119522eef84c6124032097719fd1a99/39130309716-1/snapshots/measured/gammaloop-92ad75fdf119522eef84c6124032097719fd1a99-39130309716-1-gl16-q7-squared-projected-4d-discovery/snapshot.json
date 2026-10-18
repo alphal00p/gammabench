@@ -1,0 +1,1822 @@
+{
+  "contracts": {
+    "fixed-point-integrand-v1": {
+      "description": "Finite nonzero integrands agree within the declared tolerance across revisions and requested evaluators",
+      "excluded": [
+        "CLI compilation",
+        "Point caching",
+        "Event processing"
+      ],
+      "included": [
+        "Fresh generated state",
+        "Declared evaluator implementations",
+        "Fixed-point numerical validation"
+      ]
+    }
+  },
+  "created_at": "2026-10-18T13:27:52.551232+00:00",
+  "host": {
+    "available_affinity": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "cpu": "x86_64",
+    "cpu_count": 4,
+    "cpu_model": "AMD EPYC 7763 64-Core Processor",
+    "exclusive_cpu_reservation": false,
+    "hostname": "runnervm8k3b6",
+    "load_average_start": [
+      1.00537109375,
+      1.134765625,
+      1.03857421875
+    ],
+    "machine": "x86_64",
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.42",
+    "python": "3.13.15",
+    "python_executable": "/nix/store/wj1f56qky4pmjc7l0r6b6l7whnnw7hp6-python3-3.13.15/bin/python3",
+    "python_sha256": "8b1577236d1a77db304db9fa3515423c3edf836b20ef8102215d77e8f35b3489",
+    "runner_image": "20261012.334.1",
+    "selected_affinity": null,
+    "shared_host": true
+  },
+  "id": "gammaloop-92ad75fdf119522eef84c6124032097719fd1a99-39130309716-1-gl16-q7-squared-projected-4d-discovery",
+  "metadata": {
+    "definitions": {
+      "benchmark.definition_version": {
+        "label": "Definition version",
+        "scope": "workload",
+        "semantic": false,
+        "type": "text"
+      },
+      "benchmark.id": {
+        "label": "Benchmark ID",
+        "scope": "workload",
+        "semantic": false,
+        "type": "text"
+      },
+      "capture.cache": {
+        "label": "Cache regime",
+        "scope": "capture",
+        "semantic": false,
+        "type": "enum",
+        "values": [
+          "cold",
+          "warm",
+          "disabled",
+          "mixed"
+        ]
+      },
+      "capture.date": {
+        "label": "Capture date",
+        "scope": "capture",
+        "semantic": false,
+        "type": "date"
+      },
+      "capture.duration": {
+        "label": "Capture duration",
+        "min": 0,
+        "scope": "capture",
+        "semantic": false,
+        "type": "quantity",
+        "unit": "s",
+        "units": [
+          {
+            "factor": 1e-09,
+            "id": "ns",
+            "label": "ns"
+          },
+          {
+            "factor": 1e-06,
+            "id": "us",
+            "label": "us"
+          },
+          {
+            "factor": 0.001,
+            "id": "ms",
+            "label": "ms"
+          },
+          {
+            "factor": 1,
+            "id": "s",
+            "label": "s"
+          },
+          {
+            "factor": 60,
+            "id": "min",
+            "label": "min"
+          }
+        ]
+      },
+      "capture.host": {
+        "label": "Host",
+        "scope": "capture",
+        "semantic": false,
+        "type": "text"
+      },
+      "capture.id": {
+        "label": "Capture ID",
+        "scope": "capture",
+        "semantic": false,
+        "type": "text"
+      },
+      "capture.origin": {
+        "label": "Capture origin",
+        "scope": "capture",
+        "semantic": false,
+        "type": "enum",
+        "values": [
+          "measured",
+          "historical-import"
+        ]
+      },
+      "capture.source_revision": {
+        "label": "Measured source revision",
+        "scope": "capture",
+        "semantic": false,
+        "type": "text"
+      },
+      "capture.status": {
+        "label": "Case capture status",
+        "scope": "capture",
+        "semantic": false,
+        "type": "enum",
+        "values": [
+          "completed",
+          "failed",
+          "partial",
+          "imported",
+          "planned",
+          "unsupported",
+          "censored",
+          "timeout",
+          "invalid",
+          "not-measured",
+          "censored_timeout"
+        ]
+      },
+      "capture.threads": {
+        "integer": true,
+        "label": "Declared worker threads",
+        "min": 1,
+        "scope": "capture",
+        "semantic": false,
+        "type": "number"
+      },
+      "capture.validation": {
+        "label": "Qualification",
+        "scope": "capture",
+        "semantic": false,
+        "type": "enum",
+        "values": [
+          "passed",
+          "failed",
+          "unqualified"
+        ]
+      },
+      "case.id": {
+        "label": "Case ID",
+        "scope": "workload",
+        "semantic": false,
+        "type": "text"
+      },
+      "implementation.source_tool": {
+        "label": "Measured source binding",
+        "scope": "capture",
+        "semantic": false,
+        "type": "text"
+      },
+      "implementation.status": {
+        "label": "Way status",
+        "scope": "capture",
+        "semantic": false,
+        "type": "enum",
+        "values": [
+          "active",
+          "experimental",
+          "retired"
+        ]
+      },
+      "implementation.tool": {
+        "label": "Tool",
+        "scope": "capture",
+        "semantic": false,
+        "type": "text"
+      },
+      "implementation.tool_label": {
+        "label": "Tool label",
+        "scope": "capture",
+        "semantic": false,
+        "type": "text"
+      },
+      "implementation.version": {
+        "label": "Version",
+        "scope": "capture",
+        "semantic": false,
+        "type": "text"
+      },
+      "implementation.version_label": {
+        "label": "Version label",
+        "scope": "capture",
+        "semantic": false,
+        "type": "text"
+      },
+      "implementation.way": {
+        "label": "Way",
+        "scope": "capture",
+        "semantic": false,
+        "type": "text"
+      },
+      "implementation.way_label": {
+        "label": "Way label",
+        "scope": "capture",
+        "semantic": false,
+        "type": "text"
+      },
+      "integration.absolute_accuracy": {
+        "label": "Target absolute accuracy",
+        "min": 0,
+        "scope": "workload",
+        "semantic": true,
+        "type": "number"
+      },
+      "integration.dimension": {
+        "integer": true,
+        "label": "Integration dimension",
+        "min": 0,
+        "scope": "workload",
+        "semantic": true,
+        "type": "number"
+      },
+      "integration.relative_accuracy": {
+        "label": "Target relative accuracy",
+        "min": 0,
+        "scope": "workload",
+        "semantic": true,
+        "type": "number"
+      },
+      "integration.samples": {
+        "integer": true,
+        "label": "Integration sample budget",
+        "min": 1,
+        "scope": "workload",
+        "semantic": true,
+        "type": "number"
+      },
+      "numeric.batch_size": {
+        "integer": true,
+        "label": "Sample batch size",
+        "min": 1,
+        "scope": "workload",
+        "semantic": true,
+        "type": "number"
+      },
+      "numeric.precision": {
+        "label": "Numeric precision",
+        "scope": "workload",
+        "semantic": true,
+        "type": "enum",
+        "values": [
+          "f32",
+          "f64",
+          "f128",
+          "arb",
+          "mixed",
+          "exact"
+        ]
+      },
+      "operation": {
+        "label": "Operation",
+        "scope": "workload",
+        "semantic": true,
+        "type": "enum",
+        "values": [
+          "diagram-generation",
+          "integrand-generation",
+          "symbolic-simplification",
+          "tensor-contraction",
+          "code-generation",
+          "evaluator-construction",
+          "evaluator-compilation",
+          "sample-evaluation",
+          "integration",
+          "vacuum-evaluation",
+          "renormalization",
+          "event-processing",
+          "drawing",
+          "workspace-build",
+          "serialization",
+          "end-to-end",
+          "vector-transform",
+          "vector-sort",
+          "integer-sum"
+        ]
+      },
+      "physics.external_legs": {
+        "integer": true,
+        "label": "External legs",
+        "min": 0,
+        "scope": "workload",
+        "semantic": true,
+        "type": "number"
+      },
+      "physics.kind": {
+        "label": "Physics object",
+        "scope": "workload",
+        "semantic": true,
+        "type": "enum",
+        "values": [
+          "amplitude",
+          "cross-section",
+          "vacuum",
+          "correlator"
+        ]
+      },
+      "physics.kinematics": {
+        "label": "Kinematic regime",
+        "scope": "workload",
+        "semantic": true,
+        "type": "enum",
+        "values": [
+          "physical",
+          "euclidean",
+          "off-shell",
+          "vacuum",
+          "mixed"
+        ]
+      },
+      "physics.loops.amplitude": {
+        "integer": true,
+        "label": "Amplitude loops",
+        "min": 0,
+        "scope": "workload",
+        "semantic": true,
+        "type": "number"
+      },
+      "physics.loops.fermion": {
+        "integer": true,
+        "label": "Closed fermion loops",
+        "min": 0,
+        "scope": "workload",
+        "semantic": true,
+        "type": "number"
+      },
+      "physics.loops.forward": {
+        "integer": true,
+        "label": "Forward-graph loops",
+        "min": 0,
+        "scope": "workload",
+        "semantic": true,
+        "type": "number"
+      },
+      "physics.mass_regime": {
+        "label": "Mass regime",
+        "scope": "workload",
+        "semantic": true,
+        "type": "enum",
+        "values": [
+          "massless",
+          "massive",
+          "mixed"
+        ]
+      },
+      "physics.model": {
+        "label": "Model",
+        "scope": "workload",
+        "semantic": true,
+        "type": "text"
+      },
+      "physics.observable": {
+        "label": "Physical observable",
+        "scope": "workload",
+        "semantic": true,
+        "type": "text"
+      },
+      "physics.order.qcd": {
+        "integer": true,
+        "label": "QCD perturbative order",
+        "min": 0,
+        "scope": "workload",
+        "semantic": true,
+        "type": "number"
+      },
+      "physics.order.qed": {
+        "integer": true,
+        "label": "QED perturbative order",
+        "min": 0,
+        "scope": "workload",
+        "semantic": true,
+        "type": "number"
+      },
+      "physics.problem_id": {
+        "label": "Shared physics problem",
+        "scope": "workload",
+        "semantic": false,
+        "type": "text"
+      },
+      "physics.process": {
+        "label": "Process specification",
+        "scope": "workload",
+        "semantic": true,
+        "type": "text"
+      },
+      "problem.id": {
+        "label": "Shared problem ID",
+        "scope": "workload",
+        "semantic": false,
+        "type": "text"
+      },
+      "purpose": {
+        "label": "Purpose",
+        "scope": "workload",
+        "semantic": false,
+        "type": "enum",
+        "values": [
+          "performance",
+          "regression",
+          "scaling",
+          "correctness",
+          "capability",
+          "diagnostic",
+          "illustrative",
+          "smoke",
+          "stress",
+          "representative"
+        ]
+      },
+      "target": {
+        "label": "Workload target",
+        "scope": "workload",
+        "semantic": true,
+        "type": "enum",
+        "values": [
+          "process",
+          "diagram",
+          "graph",
+          "integrand",
+          "expression",
+          "point",
+          "sample-batch",
+          "integration-run",
+          "kernel",
+          "build",
+          "drawing"
+        ]
+      },
+      "topic": {
+        "label": "Topic",
+        "scope": "workload",
+        "semantic": false,
+        "type": "tags",
+        "values": [
+          "graphs",
+          "integrands",
+          "algebra",
+          "tensors",
+          "evaluation",
+          "integration",
+          "renormalization",
+          "uv",
+          "ir",
+          "thresholds",
+          "sampling",
+          "events",
+          "drawing",
+          "builds",
+          "serialization",
+          "framework",
+          "numerators",
+          "color",
+          "spin",
+          "stability"
+        ]
+      },
+      "workload.element_type": {
+        "label": "Element type",
+        "scope": "workload",
+        "semantic": true,
+        "type": "text"
+      },
+      "workload.items": {
+        "integer": true,
+        "label": "Workload items",
+        "min": 0,
+        "scope": "workload",
+        "semantic": true,
+        "type": "number"
+      }
+    },
+    "metrics": {},
+    "schema_version": 1,
+    "tasks": {},
+    "values": {
+      "implementation.tool": "gammaloop",
+      "implementation.tool_label": "GammaLoop",
+      "implementation.way": "native",
+      "implementation.way_label": "Native"
+    },
+    "vocabulary_version": 1
+  },
+  "metrics": {
+    "generation_seconds": {
+      "direction": "lower",
+      "result_field": "metrics.generation_seconds",
+      "scope": "Hyperfine 2.0.0 complete generation CLI process including import and state save",
+      "unit": "s"
+    },
+    "warm_runtime_seconds_per_sample.SingleParametric": {
+      "direction": "lower",
+      "result_field": "metrics.warm_runtime_seconds_per_sample.SingleParametric",
+      "scope": "Mean native warmed seconds per sample over the fixed corpus; ten warmup samples excluded",
+      "unit": "s/sample"
+    }
+  },
+  "origin": "measured",
+  "provenance": {
+    "adapter_sha256": "64e0900ef0fb0be8d8334cee648219d9b88acc16a5fe4ed4554de43f7d211da9",
+    "build": {
+      "baseline": {
+        "context": {
+          "cargo_lock_sha256": "dff8df22ee633c535ae72f428f85b1f7db5a91f951353206b8f2081a38d99238",
+          "flake_lock_sha256": "e10c5893b513d4c7120d841b47fbfddffb3ac4f1f5cb46a18c0f7542cbde8534",
+          "profiles": {
+            "bench": {
+              "lto": "fat",
+              "opt-level": 3
+            },
+            "ci-optim": {
+              "debug": false,
+              "inherits": "dev-optim"
+            },
+            "dev-optim": {
+              "inherits": "dev",
+              "opt-level": 2,
+              "package": {
+                "*": {
+                  "opt-level": 3
+                },
+                "gammaloop-api": {
+                  "opt-level": 2
+                },
+                "gammaloop-workspace-hack": {
+                  "opt-level": 3
+                },
+                "gammalooprs": {
+                  "opt-level": 2
+                }
+              }
+            },
+            "docs": {
+              "debug": false,
+              "inherits": "dev"
+            },
+            "docs-watch": {
+              "debug": false,
+              "inherits": "dev",
+              "package": {
+                "*": {
+                  "opt-level": 2
+                }
+              }
+            },
+            "profiling": {
+              "debug": true,
+              "inherits": "release",
+              "lto": "fat",
+              "opt-level": 3
+            },
+            "release": {
+              "lto": "fat"
+            }
+          },
+          "system": "x86_64-linux"
+        },
+        "package": "/nix/store/ylbsi47v7j66afjlhgq700k8yg9g6s3x-gammaloop-api-0.1.0",
+        "store": {
+          "/nix/store/ylbsi47v7j66afjlhgq700k8yg9g6s3x-gammaloop-api-0.1.0": {
+            "ca": null,
+            "deriver": "/nix/store/x7v0jzv6y2iwgdq4fb3s1knsqcdhn2xv-gammaloop-api-0.1.0.drv",
+            "narHash": "sha256-5Rc3MQfnUx5F+mIszwnLk3dYhRFT+/aQkzL5Nw52hk8=",
+            "narSize": 399702304,
+            "references": [
+              "/nix/store/604gsr59rj7dzd0nrhp143rpvf7gyiaz-gcc-15.3.0-lib",
+              "/nix/store/dr4j0lc83wg8bciwcf5fy5k6rdwmai50-gammaloop-crate-gammaloop-api-build-0.1.0",
+              "/nix/store/lm3pknxi0ipypy3lxh1wmm8wvvavdwrn-glibc-2.42-84",
+              "/nix/store/wj1f56qky4pmjc7l0r6b6l7whnnw7hp6-python3-3.13.15",
+              "/nix/store/zilb1z0hnvjyxyvssp2gqgh3qmfxcxfi-vendor-cargo-deps"
+            ],
+            "registrationTime": 1792329103,
+            "signatures": [],
+            "storeDir": "/nix/store",
+            "ultimate": true,
+            "version": 1
+          }
+        }
+      },
+      "candidate": {
+        "context": {
+          "cargo_lock_sha256": "5952e792d11b76479ce776643d31c48f604450e4b3933045f0d6d8414ba13d69",
+          "flake_lock_sha256": "e10c5893b513d4c7120d841b47fbfddffb3ac4f1f5cb46a18c0f7542cbde8534",
+          "profiles": {
+            "bench": {
+              "lto": "fat",
+              "opt-level": 3
+            },
+            "ci-optim": {
+              "debug": false,
+              "inherits": "dev-optim"
+            },
+            "dev-optim": {
+              "inherits": "dev",
+              "opt-level": 2,
+              "package": {
+                "*": {
+                  "opt-level": 3
+                },
+                "gammaloop-api": {
+                  "opt-level": 2
+                },
+                "gammaloop-workspace-hack": {
+                  "opt-level": 3
+                },
+                "gammalooprs": {
+                  "opt-level": 2
+                }
+              }
+            },
+            "docs": {
+              "debug": false,
+              "inherits": "dev"
+            },
+            "docs-watch": {
+              "debug": false,
+              "inherits": "dev",
+              "package": {
+                "*": {
+                  "opt-level": 2
+                }
+              }
+            },
+            "profiling": {
+              "debug": true,
+              "inherits": "release",
+              "lto": "fat",
+              "opt-level": 3
+            },
+            "release": {
+              "lto": "fat"
+            }
+          },
+          "system": "x86_64-linux"
+        },
+        "package": "/nix/store/qapgc2qnb25vpv7x5br9rfdb0wsilkr0-gammaloop-api-0.1.0",
+        "store": {
+          "/nix/store/qapgc2qnb25vpv7x5br9rfdb0wsilkr0-gammaloop-api-0.1.0": {
+            "ca": null,
+            "deriver": "/nix/store/1ikl4fx6nirgah8r9375hm6jdind5r2f-gammaloop-api-0.1.0.drv",
+            "narHash": "sha256-/EVrx5HHUM9CHpI4EUAXgwy/XmXXK7EKi03i8K0AC/g=",
+            "narSize": 381108872,
+            "references": [
+              "/nix/store/604gsr59rj7dzd0nrhp143rpvf7gyiaz-gcc-15.3.0-lib",
+              "/nix/store/jf4s0xb3a79iw91qg6wrkx24n1mr80rr-vendor-cargo-deps",
+              "/nix/store/lm3pknxi0ipypy3lxh1wmm8wvvavdwrn-glibc-2.42-84",
+              "/nix/store/wj1f56qky4pmjc7l0r6b6l7whnnw7hp6-python3-3.13.15",
+              "/nix/store/xwncz0m925fdgaggnzw0ffpa6bpllzvh-gammaloop-crate-gammaloop-api-build-0.1.0"
+            ],
+            "registrationTime": 1792329157,
+            "signatures": [],
+            "storeDir": "/nix/store",
+            "ultimate": true,
+            "version": 1
+          }
+        }
+      }
+    },
+    "ci": {
+      "baseline": "ff533fcd91d80577e8372c398c17a5924613e73c",
+      "candidate": "92ad75fdf119522eef84c6124032097719fd1a99",
+      "event": "pull_request",
+      "framework_revision": "aa05a50c65e79f923a5616f7382b3efa0b71b492",
+      "pr": 119,
+      "repository": "alphal00p/gammaloop",
+      "repository_url": "https://github.com/alphal00p/gammaloop",
+      "run_attempt": 1,
+      "run_id": 39130309716
+    },
+    "ci_gate": {
+      "identity": {
+        "baseline": {
+          "commit": "ff533fcd91d80577e8372c398c17a5924613e73c",
+          "config_sha256": "9ca3dd9b06d3497483fe8090b0eb0c88288787187a994d58d9c97f6b633afae3",
+          "corpus_sha256": "b8ea7ee79f09e41ac442a66d4284c60dd81193c5b6670b389e6a3f1965b4cbb0",
+          "fixture_sha256": "e645b6ff0159289e175753ab4c854c515d7309d772bbe0e69312b7d29f0aef07"
+        },
+        "candidate": {
+          "commit": "92ad75fdf119522eef84c6124032097719fd1a99",
+          "config_sha256": "9ca3dd9b06d3497483fe8090b0eb0c88288787187a994d58d9c97f6b633afae3",
+          "corpus_sha256": "b8ea7ee79f09e41ac442a66d4284c60dd81193c5b6670b389e6a3f1965b4cbb0",
+          "fixture_sha256": "e645b6ff0159289e175753ab4c854c515d7309d772bbe0e69312b7d29f0aef07"
+        }
+      },
+      "phase": "discovery",
+      "policy": {
+        "budget_seconds": 240,
+        "correctness_tolerance": {
+          "absolute": 0.0,
+          "relative": 1e-09
+        },
+        "metric_families": [
+          "evaluator_build_seconds",
+          "warm_runtime_seconds_per_sample"
+        ],
+        "output_groups": [
+          "SingleParametric"
+        ],
+        "pairs": 5,
+        "reference_group": "SingleParametric",
+        "schema_version": 1,
+        "thresholds": {
+          "generation_seconds": [
+            0.2,
+            0.5
+          ],
+          "warm_runtime_seconds_per_sample.SingleParametric": [
+            0.15,
+            1e-06
+          ]
+        }
+      },
+      "report": {
+        "certified_zero_components": 0,
+        "confirmation_required": 0,
+        "correctness_mismatches": 0,
+        "identity_mismatch": 0,
+        "invalid_input": 0,
+        "metrics": {
+          "generation_seconds": {
+            "discovery": {
+              "absolute_threshold": 0.5,
+              "baseline_median": 0.672396334,
+              "candidate_median": 0.721378623,
+              "median_absolute_delta": 0.04437768200000003,
+              "median_relative_delta": 0.06629715995948526,
+              "pair_count": 5,
+              "paired_absolute_noise": 0.015485556848999955,
+              "paired_noise": 0.02471703000437262,
+              "relative_threshold": 0.2,
+              "slower_pairs": 5,
+              "status": 0
+            },
+            "status": 0
+          },
+          "warm_runtime_seconds_per_sample.SingleParametric": {
+            "discovery": {
+              "absolute_threshold": 1e-06,
+              "baseline_median": 0.0032795741332742254,
+              "candidate_median": 0.0034513942306521527,
+              "median_absolute_delta": 0.00017577249206209532,
+              "median_relative_delta": 0.053672822131274556,
+              "pair_count": 5,
+              "paired_absolute_noise": 1.2481627620128668e-05,
+              "paired_noise": 0.003692169398129491,
+              "relative_threshold": 0.15,
+              "slower_pairs": 5,
+              "status": 0
+            },
+            "status": 0
+          }
+        },
+        "schema_version": 2,
+        "status": 0,
+        "strict_correctness_mismatches": 0
+      }
+    },
+    "controller_source_sha256": "11de376e3ef092987ab5c78ad9d8368b01df7f57c356bdb98161a76365ba9774",
+    "workloads": {
+      "gl16-q7-squared-projected-4d": {
+        "sha256": "e645b6ff0159289e175753ab4c854c515d7309d772bbe0e69312b7d29f0aef07"
+      }
+    }
+  },
+  "records": [
+    {
+      "case": "gl16-q7-squared-projected-4d",
+      "command": [
+        "/nix/store/wj1f56qky4pmjc7l0r6b6l7whnnw7hp6-python3-3.13.15/bin/python3.13",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/adapter.py",
+        "sample",
+        "--fixture",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/fixture.json",
+        "--binary",
+        "/nix/store/ylbsi47v7j66afjlhgq700k8yg9g6s3x-gammaloop-api-0.1.0/bin/gammaloop",
+        "--work-dir",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/0/baseline",
+        "--result",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/0/baseline/result.json",
+        "--deadline",
+        "1353.736091591",
+        "--side",
+        "baseline",
+        "--commit",
+        "ff533fcd91d80577e8372c398c17a5924613e73c"
+      ],
+      "contract": "fixed-point-integrand-v1",
+      "duration_ns": 9141014256,
+      "engine": "gammaloop",
+      "environment": {
+        "GAMMABENCH_PRIVATE_TRIAL": "1",
+        "OMP_NUM_THREADS": "1",
+        "RAYON_NUM_THREADS": "1"
+      },
+      "inputs_sha256": {
+        "card": "e5e3d5106f17962d5565658d6ba0b5439fed539ec1c4307b8c81888882593ca9",
+        "fixture": "89c74afb40fb1628037dfb48069fb11b2eed7429cca4828b7e214ab1972636e8",
+        "input-0": "03873c930001e60f2f5721bbb308adcbc42a577f0c60d92de30a582f72254bf9",
+        "input-1": "1c37541108670bc8049215f83346a8d9a1feb8b56bdeff3a5de1e9f982e10899",
+        "input-2": "4a84387b7a54cdfb418166e3c748528ce2e821fea6add0545b1670994fbe3e36"
+      },
+      "metrics": {
+        "generation_seconds": 0.683774369,
+        "warm_runtime_seconds_per_sample.SingleParametric": 0.003275995349929011
+      },
+      "phase": "measure",
+      "raw": {
+        "generation": "records/0-baseline-generation.json",
+        "record": "records/0-baseline.json"
+      },
+      "repeat": 0,
+      "result": {
+        "metadata": {
+          "evaluator_count": 4,
+          "generation_evaluator_compile_seconds": 0.0,
+          "generation_evaluator_spenso_seconds": 0.050262989,
+          "generation_evaluator_symbolica_seconds": 0.005520967,
+          "generation_peak_ram_bytes": 86224896,
+          "generation_total_seconds": 0.544546976,
+          "runtime_seconds_per_point": {
+            "SingleParametric": [
+              0.003320714803446328,
+              0.003273944960787943,
+              0.0032382524928059398,
+              0.003271069142675833
+            ]
+          },
+          "samples_per_point": {
+            "SingleParametric": [
+              599,
+              611,
+              622,
+              614
+            ]
+          }
+        },
+        "metrics": {
+          "generation_seconds": 0.683774369,
+          "warm_runtime_seconds_per_sample": {
+            "SingleParametric": 0.003275995349929011
+          }
+        },
+        "outputs": {
+          "SingleParametric": [
+            2.2837205332711258e-10,
+            0.0,
+            6.090418466408559e-07,
+            0.0,
+            3.150045872997311e-05,
+            0.0,
+            7.330001799627637e-09,
+            0.0
+          ]
+        }
+      },
+      "returncode": 0,
+      "started_at": "2026-10-18T13:27:52.554622+00:00",
+      "status": "completed",
+      "task": "baseline",
+      "variant": "baseline"
+    },
+    {
+      "case": "gl16-q7-squared-projected-4d",
+      "command": [
+        "/nix/store/wj1f56qky4pmjc7l0r6b6l7whnnw7hp6-python3-3.13.15/bin/python3.13",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/adapter.py",
+        "sample",
+        "--fixture",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/fixture.json",
+        "--binary",
+        "/nix/store/qapgc2qnb25vpv7x5br9rfdb0wsilkr0-gammaloop-api-0.1.0/bin/gammaloop",
+        "--work-dir",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/0/candidate",
+        "--result",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/0/candidate/result.json",
+        "--deadline",
+        "1353.736091591",
+        "--side",
+        "candidate",
+        "--commit",
+        "92ad75fdf119522eef84c6124032097719fd1a99"
+      ],
+      "contract": "fixed-point-integrand-v1",
+      "duration_ns": 9238565853,
+      "engine": "gammaloop",
+      "environment": {
+        "GAMMABENCH_PRIVATE_TRIAL": "1",
+        "OMP_NUM_THREADS": "1",
+        "RAYON_NUM_THREADS": "1"
+      },
+      "inputs_sha256": {
+        "card": "e5e3d5106f17962d5565658d6ba0b5439fed539ec1c4307b8c81888882593ca9",
+        "fixture": "89c74afb40fb1628037dfb48069fb11b2eed7429cca4828b7e214ab1972636e8",
+        "input-0": "03873c930001e60f2f5721bbb308adcbc42a577f0c60d92de30a582f72254bf9",
+        "input-1": "1c37541108670bc8049215f83346a8d9a1feb8b56bdeff3a5de1e9f982e10899",
+        "input-2": "4a84387b7a54cdfb418166e3c748528ce2e821fea6add0545b1670994fbe3e36"
+      },
+      "metrics": {
+        "generation_seconds": 0.717707186,
+        "warm_runtime_seconds_per_sample.SingleParametric": 0.0034324047101339885
+      },
+      "phase": "measure",
+      "raw": {
+        "generation": "records/0-candidate-generation.json",
+        "record": "records/0-candidate.json"
+      },
+      "repeat": 0,
+      "result": {
+        "metadata": {
+          "evaluator_count": 6,
+          "generation_evaluator_compile_seconds": 0.0,
+          "generation_evaluator_spenso_seconds": 0.020827339,
+          "generation_evaluator_symbolica_seconds": 0.016334624,
+          "generation_peak_ram_bytes": 89161728,
+          "generation_total_seconds": 0.578135513,
+          "runtime_seconds_per_point": {
+            "SingleParametric": [
+              0.003451181907017544,
+              0.0034268587796902395,
+              0.003406507102162478,
+              0.003445071051665692
+            ]
+          },
+          "samples_per_point": {
+            "SingleParametric": [
+              577,
+              587,
+              588,
+              584
+            ]
+          }
+        },
+        "metrics": {
+          "generation_seconds": 0.717707186,
+          "warm_runtime_seconds_per_sample": {
+            "SingleParametric": 0.0034324047101339885
+          }
+        },
+        "outputs": {
+          "SingleParametric": [
+            2.2837205332711263e-10,
+            0.0,
+            6.090418466408565e-07,
+            0.0,
+            3.1500458729973115e-05,
+            0.0,
+            7.330001799627643e-09,
+            0.0
+          ]
+        }
+      },
+      "returncode": 0,
+      "started_at": "2026-10-18T13:28:01.696900+00:00",
+      "status": "completed",
+      "task": "candidate",
+      "variant": "candidate"
+    },
+    {
+      "case": "gl16-q7-squared-projected-4d",
+      "command": [
+        "/nix/store/wj1f56qky4pmjc7l0r6b6l7whnnw7hp6-python3-3.13.15/bin/python3.13",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/adapter.py",
+        "sample",
+        "--fixture",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/fixture.json",
+        "--binary",
+        "/nix/store/qapgc2qnb25vpv7x5br9rfdb0wsilkr0-gammaloop-api-0.1.0/bin/gammaloop",
+        "--work-dir",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/1/candidate",
+        "--result",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/1/candidate/result.json",
+        "--deadline",
+        "1353.736091591",
+        "--side",
+        "candidate",
+        "--commit",
+        "92ad75fdf119522eef84c6124032097719fd1a99"
+      ],
+      "contract": "fixed-point-integrand-v1",
+      "duration_ns": 9239772679,
+      "engine": "gammaloop",
+      "environment": {
+        "GAMMABENCH_PRIVATE_TRIAL": "1",
+        "OMP_NUM_THREADS": "1",
+        "RAYON_NUM_THREADS": "1"
+      },
+      "inputs_sha256": {
+        "card": "e5e3d5106f17962d5565658d6ba0b5439fed539ec1c4307b8c81888882593ca9",
+        "fixture": "89c74afb40fb1628037dfb48069fb11b2eed7429cca4828b7e214ab1972636e8",
+        "input-0": "03873c930001e60f2f5721bbb308adcbc42a577f0c60d92de30a582f72254bf9",
+        "input-1": "1c37541108670bc8049215f83346a8d9a1feb8b56bdeff3a5de1e9f982e10899",
+        "input-2": "4a84387b7a54cdfb418166e3c748528ce2e821fea6add0545b1670994fbe3e36"
+      },
+      "metrics": {
+        "generation_seconds": 0.726198988,
+        "warm_runtime_seconds_per_sample.SingleParametric": 0.0034642920653471603
+      },
+      "phase": "measure",
+      "raw": {
+        "generation": "records/1-candidate-generation.json",
+        "record": "records/1-candidate.json"
+      },
+      "repeat": 1,
+      "result": {
+        "metadata": {
+          "evaluator_count": 6,
+          "generation_evaluator_compile_seconds": 0.0,
+          "generation_evaluator_spenso_seconds": 0.021073892,
+          "generation_evaluator_symbolica_seconds": 0.016428714,
+          "generation_peak_ram_bytes": 89063424,
+          "generation_total_seconds": 0.585387134,
+          "runtime_seconds_per_point": {
+            "SingleParametric": [
+              0.003505018167150635,
+              0.003445464499736996,
+              0.0034412060308591464,
+              0.0034654795636418637
+            ]
+          },
+          "samples_per_point": {
+            "SingleParametric": [
+              572,
+              582,
+              587,
+              573
+            ]
+          }
+        },
+        "metrics": {
+          "generation_seconds": 0.726198988,
+          "warm_runtime_seconds_per_sample": {
+            "SingleParametric": 0.0034642920653471603
+          }
+        },
+        "outputs": {
+          "SingleParametric": [
+            2.2837205332711263e-10,
+            0.0,
+            6.090418466408565e-07,
+            0.0,
+            3.1500458729973115e-05,
+            0.0,
+            7.330001799627643e-09,
+            0.0
+          ]
+        }
+      },
+      "returncode": 0,
+      "started_at": "2026-10-18T13:28:10.936492+00:00",
+      "status": "completed",
+      "task": "candidate",
+      "variant": "candidate"
+    },
+    {
+      "case": "gl16-q7-squared-projected-4d",
+      "command": [
+        "/nix/store/wj1f56qky4pmjc7l0r6b6l7whnnw7hp6-python3-3.13.15/bin/python3.13",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/adapter.py",
+        "sample",
+        "--fixture",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/fixture.json",
+        "--binary",
+        "/nix/store/ylbsi47v7j66afjlhgq700k8yg9g6s3x-gammaloop-api-0.1.0/bin/gammaloop",
+        "--work-dir",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/1/baseline",
+        "--result",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/1/baseline/result.json",
+        "--deadline",
+        "1353.736091591",
+        "--side",
+        "baseline",
+        "--commit",
+        "ff533fcd91d80577e8372c398c17a5924613e73c"
+      ],
+      "contract": "fixed-point-integrand-v1",
+      "duration_ns": 9088789886,
+      "engine": "gammaloop",
+      "environment": {
+        "GAMMABENCH_PRIVATE_TRIAL": "1",
+        "OMP_NUM_THREADS": "1",
+        "RAYON_NUM_THREADS": "1"
+      },
+      "inputs_sha256": {
+        "card": "e5e3d5106f17962d5565658d6ba0b5439fed539ec1c4307b8c81888882593ca9",
+        "fixture": "89c74afb40fb1628037dfb48069fb11b2eed7429cca4828b7e214ab1972636e8",
+        "input-0": "03873c930001e60f2f5721bbb308adcbc42a577f0c60d92de30a582f72254bf9",
+        "input-1": "1c37541108670bc8049215f83346a8d9a1feb8b56bdeff3a5de1e9f982e10899",
+        "input-2": "4a84387b7a54cdfb418166e3c748528ce2e821fea6add0545b1670994fbe3e36"
+      },
+      "metrics": {
+        "generation_seconds": 0.66411912,
+        "warm_runtime_seconds_per_sample.SingleParametric": 0.0032803353866398075
+      },
+      "phase": "measure",
+      "raw": {
+        "generation": "records/1-baseline-generation.json",
+        "record": "records/1-baseline.json"
+      },
+      "repeat": 1,
+      "result": {
+        "metadata": {
+          "evaluator_count": 4,
+          "generation_evaluator_compile_seconds": 0.0,
+          "generation_evaluator_spenso_seconds": 0.049789295,
+          "generation_evaluator_symbolica_seconds": 0.005454583,
+          "generation_peak_ram_bytes": 87609344,
+          "generation_total_seconds": 0.5233113,
+          "runtime_seconds_per_point": {
+            "SingleParametric": [
+              0.003299677818579235,
+              0.0032700682033898303,
+              0.0032629094131147542,
+              0.00328868611147541
+            ]
+          },
+          "samples_per_point": {
+            "SingleParametric": [
+              605,
+              590,
+              616,
+              613
+            ]
+          }
+        },
+        "metrics": {
+          "generation_seconds": 0.66411912,
+          "warm_runtime_seconds_per_sample": {
+            "SingleParametric": 0.0032803353866398075
+          }
+        },
+        "outputs": {
+          "SingleParametric": [
+            2.2837205332711258e-10,
+            0.0,
+            6.090418466408559e-07,
+            0.0,
+            3.150045872997311e-05,
+            0.0,
+            7.330001799627637e-09,
+            0.0
+          ]
+        }
+      },
+      "returncode": 0,
+      "started_at": "2026-10-18T13:28:20.177476+00:00",
+      "status": "completed",
+      "task": "baseline",
+      "variant": "baseline"
+    },
+    {
+      "case": "gl16-q7-squared-projected-4d",
+      "command": [
+        "/nix/store/wj1f56qky4pmjc7l0r6b6l7whnnw7hp6-python3-3.13.15/bin/python3.13",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/adapter.py",
+        "sample",
+        "--fixture",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/fixture.json",
+        "--binary",
+        "/nix/store/ylbsi47v7j66afjlhgq700k8yg9g6s3x-gammaloop-api-0.1.0/bin/gammaloop",
+        "--work-dir",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/2/baseline",
+        "--result",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/2/baseline/result.json",
+        "--deadline",
+        "1353.736091591",
+        "--side",
+        "baseline",
+        "--commit",
+        "ff533fcd91d80577e8372c398c17a5924613e73c"
+      ],
+      "contract": "fixed-point-integrand-v1",
+      "duration_ns": 8989458039,
+      "engine": "gammaloop",
+      "environment": {
+        "GAMMABENCH_PRIVATE_TRIAL": "1",
+        "OMP_NUM_THREADS": "1",
+        "RAYON_NUM_THREADS": "1"
+      },
+      "inputs_sha256": {
+        "card": "e5e3d5106f17962d5565658d6ba0b5439fed539ec1c4307b8c81888882593ca9",
+        "fixture": "89c74afb40fb1628037dfb48069fb11b2eed7429cca4828b7e214ab1972636e8",
+        "input-0": "03873c930001e60f2f5721bbb308adcbc42a577f0c60d92de30a582f72254bf9",
+        "input-1": "1c37541108670bc8049215f83346a8d9a1feb8b56bdeff3a5de1e9f982e10899",
+        "input-2": "4a84387b7a54cdfb418166e3c748528ce2e821fea6add0545b1670994fbe3e36"
+      },
+      "metrics": {
+        "generation_seconds": 0.67913449,
+        "warm_runtime_seconds_per_sample.SingleParametric": 0.0032795741332742254
+      },
+      "phase": "measure",
+      "raw": {
+        "generation": "records/2-baseline-generation.json",
+        "record": "records/2-baseline.json"
+      },
+      "repeat": 2,
+      "result": {
+        "metadata": {
+          "evaluator_count": 4,
+          "generation_evaluator_compile_seconds": 0.0,
+          "generation_evaluator_spenso_seconds": 0.050757326,
+          "generation_evaluator_symbolica_seconds": 0.005415859,
+          "generation_peak_ram_bytes": 86237184,
+          "generation_total_seconds": 0.537891833,
+          "runtime_seconds_per_point": {
+            "SingleParametric": [
+              0.0033041541946448086,
+              0.0032692184625330517,
+              0.003259331852485457,
+              0.003285592023433584
+            ]
+          },
+          "samples_per_point": {
+            "SingleParametric": [
+              604,
+              615,
+              615,
+              564
+            ]
+          }
+        },
+        "metrics": {
+          "generation_seconds": 0.67913449,
+          "warm_runtime_seconds_per_sample": {
+            "SingleParametric": 0.0032795741332742254
+          }
+        },
+        "outputs": {
+          "SingleParametric": [
+            2.2837205332711258e-10,
+            0.0,
+            6.090418466408559e-07,
+            0.0,
+            3.150045872997311e-05,
+            0.0,
+            7.330001799627637e-09,
+            0.0
+          ]
+        }
+      },
+      "returncode": 0,
+      "started_at": "2026-10-18T13:28:29.267441+00:00",
+      "status": "completed",
+      "task": "baseline",
+      "variant": "baseline"
+    },
+    {
+      "case": "gl16-q7-squared-projected-4d",
+      "command": [
+        "/nix/store/wj1f56qky4pmjc7l0r6b6l7whnnw7hp6-python3-3.13.15/bin/python3.13",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/adapter.py",
+        "sample",
+        "--fixture",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/fixture.json",
+        "--binary",
+        "/nix/store/qapgc2qnb25vpv7x5br9rfdb0wsilkr0-gammaloop-api-0.1.0/bin/gammaloop",
+        "--work-dir",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/2/candidate",
+        "--result",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/2/candidate/result.json",
+        "--deadline",
+        "1353.736091591",
+        "--side",
+        "candidate",
+        "--commit",
+        "92ad75fdf119522eef84c6124032097719fd1a99"
+      ],
+      "contract": "fixed-point-integrand-v1",
+      "duration_ns": 9190894108,
+      "engine": "gammaloop",
+      "environment": {
+        "GAMMABENCH_PRIVATE_TRIAL": "1",
+        "OMP_NUM_THREADS": "1",
+        "RAYON_NUM_THREADS": "1"
+      },
+      "inputs_sha256": {
+        "card": "e5e3d5106f17962d5565658d6ba0b5439fed539ec1c4307b8c81888882593ca9",
+        "fixture": "89c74afb40fb1628037dfb48069fb11b2eed7429cca4828b7e214ab1972636e8",
+        "input-0": "03873c930001e60f2f5721bbb308adcbc42a577f0c60d92de30a582f72254bf9",
+        "input-1": "1c37541108670bc8049215f83346a8d9a1feb8b56bdeff3a5de1e9f982e10899",
+        "input-2": "4a84387b7a54cdfb418166e3c748528ce2e821fea6add0545b1670994fbe3e36"
+      },
+      "metrics": {
+        "generation_seconds": 0.721378623,
+        "warm_runtime_seconds_per_sample.SingleParametric": 0.0034637653678293253
+      },
+      "phase": "measure",
+      "raw": {
+        "generation": "records/2-candidate-generation.json",
+        "record": "records/2-candidate.json"
+      },
+      "repeat": 2,
+      "result": {
+        "metadata": {
+          "evaluator_count": 6,
+          "generation_evaluator_compile_seconds": 0.0,
+          "generation_evaluator_spenso_seconds": 0.021209564,
+          "generation_evaluator_symbolica_seconds": 0.01638616,
+          "generation_peak_ram_bytes": 89546752,
+          "generation_total_seconds": 0.579824467,
+          "runtime_seconds_per_point": {
+            "SingleParametric": [
+              0.0034891720006578948,
+              0.003450666928039927,
+              0.0034401102293103447,
+              0.0034751123133091345
+            ]
+          },
+          "samples_per_point": {
+            "SingleParametric": [
+              568,
+              576,
+              584,
+              574
+            ]
+          }
+        },
+        "metrics": {
+          "generation_seconds": 0.721378623,
+          "warm_runtime_seconds_per_sample": {
+            "SingleParametric": 0.0034637653678293253
+          }
+        },
+        "outputs": {
+          "SingleParametric": [
+            2.2837205332711263e-10,
+            0.0,
+            6.090418466408565e-07,
+            0.0,
+            3.1500458729973115e-05,
+            0.0,
+            7.330001799627643e-09,
+            0.0
+          ]
+        }
+      },
+      "returncode": 0,
+      "started_at": "2026-10-18T13:28:38.257931+00:00",
+      "status": "completed",
+      "task": "candidate",
+      "variant": "candidate"
+    },
+    {
+      "case": "gl16-q7-squared-projected-4d",
+      "command": [
+        "/nix/store/wj1f56qky4pmjc7l0r6b6l7whnnw7hp6-python3-3.13.15/bin/python3.13",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/adapter.py",
+        "sample",
+        "--fixture",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/fixture.json",
+        "--binary",
+        "/nix/store/qapgc2qnb25vpv7x5br9rfdb0wsilkr0-gammaloop-api-0.1.0/bin/gammaloop",
+        "--work-dir",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/3/candidate",
+        "--result",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/3/candidate/result.json",
+        "--deadline",
+        "1353.736091591",
+        "--side",
+        "candidate",
+        "--commit",
+        "92ad75fdf119522eef84c6124032097719fd1a99"
+      ],
+      "contract": "fixed-point-integrand-v1",
+      "duration_ns": 9240650795,
+      "engine": "gammaloop",
+      "environment": {
+        "GAMMABENCH_PRIVATE_TRIAL": "1",
+        "OMP_NUM_THREADS": "1",
+        "RAYON_NUM_THREADS": "1"
+      },
+      "inputs_sha256": {
+        "card": "e5e3d5106f17962d5565658d6ba0b5439fed539ec1c4307b8c81888882593ca9",
+        "fixture": "89c74afb40fb1628037dfb48069fb11b2eed7429cca4828b7e214ab1972636e8",
+        "input-0": "03873c930001e60f2f5721bbb308adcbc42a577f0c60d92de30a582f72254bf9",
+        "input-1": "1c37541108670bc8049215f83346a8d9a1feb8b56bdeff3a5de1e9f982e10899",
+        "input-2": "4a84387b7a54cdfb418166e3c748528ce2e821fea6add0545b1670994fbe3e36"
+      },
+      "metrics": {
+        "generation_seconds": 0.713752992,
+        "warm_runtime_seconds_per_sample.SingleParametric": 0.003450660695857045
+      },
+      "phase": "measure",
+      "raw": {
+        "generation": "records/3-candidate-generation.json",
+        "record": "records/3-candidate.json"
+      },
+      "repeat": 3,
+      "result": {
+        "metadata": {
+          "evaluator_count": 6,
+          "generation_evaluator_compile_seconds": 0.0,
+          "generation_evaluator_spenso_seconds": 0.020768791,
+          "generation_evaluator_symbolica_seconds": 0.015887386,
+          "generation_peak_ram_bytes": 89128960,
+          "generation_total_seconds": 0.570758873,
+          "runtime_seconds_per_point": {
+            "SingleParametric": [
+              0.003476047905958863,
+              0.003431437491642315,
+              0.0034257986344535356,
+              0.0034693587513734666
+            ]
+          },
+          "samples_per_point": {
+            "SingleParametric": [
+              573,
+              583,
+              587,
+              583
+            ]
+          }
+        },
+        "metrics": {
+          "generation_seconds": 0.713752992,
+          "warm_runtime_seconds_per_sample": {
+            "SingleParametric": 0.003450660695857045
+          }
+        },
+        "outputs": {
+          "SingleParametric": [
+            2.2837205332711263e-10,
+            0.0,
+            6.090418466408565e-07,
+            0.0,
+            3.1500458729973115e-05,
+            0.0,
+            7.330001799627643e-09,
+            0.0
+          ]
+        }
+      },
+      "returncode": 0,
+      "started_at": "2026-10-18T13:28:47.450049+00:00",
+      "status": "completed",
+      "task": "candidate",
+      "variant": "candidate"
+    },
+    {
+      "case": "gl16-q7-squared-projected-4d",
+      "command": [
+        "/nix/store/wj1f56qky4pmjc7l0r6b6l7whnnw7hp6-python3-3.13.15/bin/python3.13",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/adapter.py",
+        "sample",
+        "--fixture",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/fixture.json",
+        "--binary",
+        "/nix/store/ylbsi47v7j66afjlhgq700k8yg9g6s3x-gammaloop-api-0.1.0/bin/gammaloop",
+        "--work-dir",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/3/baseline",
+        "--result",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/3/baseline/result.json",
+        "--deadline",
+        "1353.736091591",
+        "--side",
+        "baseline",
+        "--commit",
+        "ff533fcd91d80577e8372c398c17a5924613e73c"
+      ],
+      "contract": "fixed-point-integrand-v1",
+      "duration_ns": 9140466026,
+      "engine": "gammaloop",
+      "environment": {
+        "GAMMABENCH_PRIVATE_TRIAL": "1",
+        "OMP_NUM_THREADS": "1",
+        "RAYON_NUM_THREADS": "1"
+      },
+      "inputs_sha256": {
+        "card": "e5e3d5106f17962d5565658d6ba0b5439fed539ec1c4307b8c81888882593ca9",
+        "fixture": "89c74afb40fb1628037dfb48069fb11b2eed7429cca4828b7e214ab1972636e8",
+        "input-0": "03873c930001e60f2f5721bbb308adcbc42a577f0c60d92de30a582f72254bf9",
+        "input-1": "1c37541108670bc8049215f83346a8d9a1feb8b56bdeff3a5de1e9f982e10899",
+        "input-2": "4a84387b7a54cdfb418166e3c748528ce2e821fea6add0545b1670994fbe3e36"
+      },
+      "metrics": {
+        "generation_seconds": 0.66937531,
+        "warm_runtime_seconds_per_sample.SingleParametric": 0.0032748882037949498
+      },
+      "phase": "measure",
+      "raw": {
+        "generation": "records/3-baseline-generation.json",
+        "record": "records/3-baseline.json"
+      },
+      "repeat": 3,
+      "result": {
+        "metadata": {
+          "evaluator_count": 4,
+          "generation_evaluator_compile_seconds": 0.0,
+          "generation_evaluator_spenso_seconds": 0.050799132,
+          "generation_evaluator_symbolica_seconds": 0.005612421,
+          "generation_peak_ram_bytes": 87076864,
+          "generation_total_seconds": 0.530746804,
+          "runtime_seconds_per_point": {
+            "SingleParametric": [
+              0.003288519264016393,
+              0.003259481173188789,
+              0.003275292104521417,
+              0.0032762602734531993
+            ]
+          },
+          "samples_per_point": {
+            "SingleParametric": [
+              608,
+              618,
+              611,
+              615
+            ]
+          }
+        },
+        "metrics": {
+          "generation_seconds": 0.66937531,
+          "warm_runtime_seconds_per_sample": {
+            "SingleParametric": 0.0032748882037949498
+          }
+        },
+        "outputs": {
+          "SingleParametric": [
+            2.2837205332711258e-10,
+            0.0,
+            6.090418466408559e-07,
+            0.0,
+            3.150045872997311e-05,
+            0.0,
+            7.330001799627637e-09,
+            0.0
+          ]
+        }
+      },
+      "returncode": 0,
+      "started_at": "2026-10-18T13:28:56.691941+00:00",
+      "status": "completed",
+      "task": "baseline",
+      "variant": "baseline"
+    },
+    {
+      "case": "gl16-q7-squared-projected-4d",
+      "command": [
+        "/nix/store/wj1f56qky4pmjc7l0r6b6l7whnnw7hp6-python3-3.13.15/bin/python3.13",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/adapter.py",
+        "sample",
+        "--fixture",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/fixture.json",
+        "--binary",
+        "/nix/store/ylbsi47v7j66afjlhgq700k8yg9g6s3x-gammaloop-api-0.1.0/bin/gammaloop",
+        "--work-dir",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/4/baseline",
+        "--result",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/4/baseline/result.json",
+        "--deadline",
+        "1353.736091591",
+        "--side",
+        "baseline",
+        "--commit",
+        "ff533fcd91d80577e8372c398c17a5924613e73c"
+      ],
+      "contract": "fixed-point-integrand-v1",
+      "duration_ns": 9139354622,
+      "engine": "gammaloop",
+      "environment": {
+        "GAMMABENCH_PRIVATE_TRIAL": "1",
+        "OMP_NUM_THREADS": "1",
+        "RAYON_NUM_THREADS": "1"
+      },
+      "inputs_sha256": {
+        "card": "e5e3d5106f17962d5565658d6ba0b5439fed539ec1c4307b8c81888882593ca9",
+        "fixture": "89c74afb40fb1628037dfb48069fb11b2eed7429cca4828b7e214ab1972636e8",
+        "input-0": "03873c930001e60f2f5721bbb308adcbc42a577f0c60d92de30a582f72254bf9",
+        "input-1": "1c37541108670bc8049215f83346a8d9a1feb8b56bdeff3a5de1e9f982e10899",
+        "input-2": "4a84387b7a54cdfb418166e3c748528ce2e821fea6add0545b1670994fbe3e36"
+      },
+      "metrics": {
+        "generation_seconds": 0.672396334,
+        "warm_runtime_seconds_per_sample.SingleParametric": 0.0032853925572611494
+      },
+      "phase": "measure",
+      "raw": {
+        "generation": "records/4-baseline-generation.json",
+        "record": "records/4-baseline.json"
+      },
+      "repeat": 4,
+      "result": {
+        "metadata": {
+          "evaluator_count": 4,
+          "generation_evaluator_compile_seconds": 0.0,
+          "generation_evaluator_spenso_seconds": 0.050331862,
+          "generation_evaluator_symbolica_seconds": 0.00551278,
+          "generation_peak_ram_bytes": 87261184,
+          "generation_total_seconds": 0.533539347,
+          "runtime_seconds_per_point": {
+            "SingleParametric": [
+              0.003307780334699454,
+              0.003276806621575886,
+              0.003264911340692755,
+              0.0032920719320765025
+            ]
+          },
+          "samples_per_point": {
+            "SingleParametric": [
+              606,
+              614,
+              615,
+              605
+            ]
+          }
+        },
+        "metrics": {
+          "generation_seconds": 0.672396334,
+          "warm_runtime_seconds_per_sample": {
+            "SingleParametric": 0.0032853925572611494
+          }
+        },
+        "outputs": {
+          "SingleParametric": [
+            2.2837205332711258e-10,
+            0.0,
+            6.090418466408559e-07,
+            0.0,
+            3.150045872997311e-05,
+            0.0,
+            7.330001799627637e-09,
+            0.0
+          ]
+        }
+      },
+      "returncode": 0,
+      "started_at": "2026-10-18T13:29:05.833451+00:00",
+      "status": "completed",
+      "task": "baseline",
+      "variant": "baseline"
+    },
+    {
+      "case": "gl16-q7-squared-projected-4d",
+      "command": [
+        "/nix/store/wj1f56qky4pmjc7l0r6b6l7whnnw7hp6-python3-3.13.15/bin/python3.13",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/adapter.py",
+        "sample",
+        "--fixture",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d-suite/fixture.json",
+        "--binary",
+        "/nix/store/qapgc2qnb25vpv7x5br9rfdb0wsilkr0-gammaloop-api-0.1.0/bin/gammaloop",
+        "--work-dir",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/4/candidate",
+        "--result",
+        "/home/runner/work/_temp/performance-private-39130309716-1/gl16-q7-squared-projected-4d/discovery/4/candidate/result.json",
+        "--deadline",
+        "1353.736091591",
+        "--side",
+        "candidate",
+        "--commit",
+        "92ad75fdf119522eef84c6124032097719fd1a99"
+      ],
+      "contract": "fixed-point-integrand-v1",
+      "duration_ns": 9239556013,
+      "engine": "gammaloop",
+      "environment": {
+        "GAMMABENCH_PRIVATE_TRIAL": "1",
+        "OMP_NUM_THREADS": "1",
+        "RAYON_NUM_THREADS": "1"
+      },
+      "inputs_sha256": {
+        "card": "e5e3d5106f17962d5565658d6ba0b5439fed539ec1c4307b8c81888882593ca9",
+        "fixture": "89c74afb40fb1628037dfb48069fb11b2eed7429cca4828b7e214ab1972636e8",
+        "input-0": "03873c930001e60f2f5721bbb308adcbc42a577f0c60d92de30a582f72254bf9",
+        "input-1": "1c37541108670bc8049215f83346a8d9a1feb8b56bdeff3a5de1e9f982e10899",
+        "input-2": "4a84387b7a54cdfb418166e3c748528ce2e821fea6add0545b1670994fbe3e36"
+      },
+      "metrics": {
+        "generation_seconds": 0.728860517,
+        "warm_runtime_seconds_per_sample.SingleParametric": 0.0034513942306521527
+      },
+      "phase": "measure",
+      "raw": {
+        "generation": "records/4-candidate-generation.json",
+        "record": "records/4-candidate.json"
+      },
+      "repeat": 4,
+      "result": {
+        "metadata": {
+          "evaluator_count": 6,
+          "generation_evaluator_compile_seconds": 0.0,
+          "generation_evaluator_spenso_seconds": 0.021088254,
+          "generation_evaluator_symbolica_seconds": 0.016205698,
+          "generation_peak_ram_bytes": 89018368,
+          "generation_total_seconds": 0.587276943,
+          "runtime_seconds_per_point": {
+            "SingleParametric": [
+              0.003484189507471264,
+              0.0034337878360607837,
+              0.0034261595235242546,
+              0.003461440055552308
+            ]
+          },
+          "samples_per_point": {
+            "SingleParametric": [
+              576,
+              585,
+              587,
+              581
+            ]
+          }
+        },
+        "metrics": {
+          "generation_seconds": 0.728860517,
+          "warm_runtime_seconds_per_sample": {
+            "SingleParametric": 0.0034513942306521527
+          }
+        },
+        "outputs": {
+          "SingleParametric": [
+            2.2837205332711263e-10,
+            0.0,
+            6.090418466408565e-07,
+            0.0,
+            3.1500458729973115e-05,
+            0.0,
+            7.330001799627643e-09,
+            0.0
+          ]
+        }
+      },
+      "returncode": 0,
+      "started_at": "2026-10-18T13:29:14.973772+00:00",
+      "status": "completed",
+      "task": "candidate",
+      "variant": "candidate"
+    }
+  ],
+  "schedule": {
+    "pairing_id": "gammaloop-92ad75fdf119522eef84c6124032097719fd1a99-39130309716-1-gl16-q7-squared-projected-4d-discovery",
+    "repeats": 5,
+    "selected_tasks": [
+      "baseline",
+      "candidate"
+    ],
+    "warmups": 0
+  },
+  "schema_version": 1,
+  "status": "completed",
+  "suite_id": "gammaloop-ci-gl16-q7-squared-projected-4d",
+  "tools": {
+    "baseline": {
+      "kind": "executable",
+      "path": "/nix/store/ylbsi47v7j66afjlhgq700k8yg9g6s3x-gammaloop-api-0.1.0/bin/gammaloop",
+      "sha256": "e8a268669d2c74f621691a1c5e6c547c74cf05dd32f7b66420a32146b5f5c302",
+      "tool_path": "/nix/store/ylbsi47v7j66afjlhgq700k8yg9g6s3x-gammaloop-api-0.1.0/bin/gammaloop",
+      "version": "ff533fcd91d80577e8372c398c17a5924613e73c"
+    },
+    "candidate": {
+      "kind": "executable",
+      "path": "/nix/store/qapgc2qnb25vpv7x5br9rfdb0wsilkr0-gammaloop-api-0.1.0/bin/gammaloop",
+      "sha256": "efc0cd0e96f7e29350d4a8605ca105c31f794f17b5147e350045bea5d0458d4d",
+      "tool_path": "/nix/store/qapgc2qnb25vpv7x5br9rfdb0wsilkr0-gammaloop-api-0.1.0/bin/gammaloop",
+      "version": "92ad75fdf119522eef84c6124032097719fd1a99"
+    },
+    "hyperfine": {
+      "kind": "executable",
+      "path": "/nix/store/9ik81ccnqn0jlyx9qlcm767k1h09ydhd-hyperfine-2.0.0/bin/hyperfine",
+      "sha256": "9b06d88ff2c903bfb07c3c5608c1ca978ada941b0190039a50d73f6379b7363b",
+      "tool_path": "/nix/store/9ik81ccnqn0jlyx9qlcm767k1h09ydhd-hyperfine-2.0.0/bin/hyperfine",
+      "version": "2.0.0"
+    },
+    "python": {
+      "kind": "executable",
+      "path": "/nix/store/wj1f56qky4pmjc7l0r6b6l7whnnw7hp6-python3-3.13.15/bin/python3",
+      "sha256": "8b1577236d1a77db304db9fa3515423c3edf836b20ef8102215d77e8f35b3489",
+      "tool_path": "/nix/store/wj1f56qky4pmjc7l0r6b6l7whnnw7hp6-python3-3.13.15/bin/python3.13",
+      "version": "3.13.15"
+    }
+  },
+  "validation": {
+    "equivalence": [],
+    "status": "passed",
+    "tasks": {
+      "baseline": {
+        "method": "numeric-tolerance-v1",
+        "reason": "",
+        "status": "passed"
+      },
+      "candidate": {
+        "method": "numeric-tolerance-v1",
+        "reason": "",
+        "status": "passed"
+      }
+    }
+  }
+}
