@@ -43,8 +43,8 @@
 
 #let list-page(root: "", assets: "assets/") = bench-document(
   "Benchmarks", "Independent tool histories, recorded comparisons and exact measurement pins.",
-  assets: assets, home: root + home, scripts: ("list.js?ui=compact-v2", "explorer.js?ui=list-v1"),
-  styles: ("explorer.css?ui=list-v1", "list.css?ui=compact-v2"),
+  assets: assets, home: root + home, scripts: ("list.js?ui=pinned-plots-v1", "explorer.js?ui=list-v1"),
+  styles: ("explorer.css?ui=list-v1", "list.css?ui=pinned-plots-v1"),
 )[
   #preview-notice(root)
   #explorer(catalog, root: root, model: model)

@@ -105,4 +105,39 @@ assert.equal(L.observedRange({...a,min:11,max:13}), '11–13 s');
 assert.equal(L.metricTitle({metricLabel:'Whole process instructions',unit:'instructions'}),'Whole process instructions');
 assert.equal(L.metricTitle({metricLabel:'Generation time',unit:'s'}),'Generation time · s');
 
-console.log('Independent histories, stored ratios, exact pins, evidence groups and comparison identities passed');
+// Pin plots are grouped by workload and measurement before any pairing is considered.
+const otherWorkload = record('other', {benchmark:'integration',case:'other-integrand',set:'set-other',tool:'different-engine'});
+const otherBase = record('other-base', {...otherWorkload,id:'other-base',tool:'reference-engine',variant:'baseline'});
+const mixedPairs = [...pairs,{baseline:'other-base',candidate:'other',status:'comparable',ratio:.25,reverse:4,count:5,reasons:[]}];
+assert.deepEqual(L.pinGroups([a,b,otherWorkload]).map(rows=>rows.map(r=>r.id)),[['a','b'],['other']]);
+const separate = L.pinComparisons([a,b,otherWorkload],mixedPairs,[a,b,otherBase,otherWorkload]);
+assert.equal(separate.length,2);
+assert.deepEqual(separate[0].values.map(r=>r.id),['a','b']);
+assert.deepEqual(separate[1].values.map(r=>r.id),['other-base','other']);
+assert.equal(L.paired(mixedPairs,separate[1].values[0],separate[1].values[1]).ratio,.25);
+for(const panel of separate) assert(panel.values.every(r=>L.pinKey(r)===L.pinKey(panel.values[0])));
+const confirmation = record('confirm', {set:'confirmation',variant:'candidate',context:'confirmation-context'});
+assert.deepEqual(L.pinComparisons([a,confirmation],[],[a,b,confirmation]).map(p=>p.values.map(r=>r.id)),[['a','b'],['confirm']]);
+const unqualified = {...b,qualified:false};
+assert(L.pinComparisons([a],pairs,[a,unqualified])[0].values.includes(unqualified));
+assert.equal(L.pinComparisons([a],pairs,[a,b],true)[0].kind,'absolute');
+assert.deepEqual(L.pinComparisons([a],pairs,[a,b],true)[0].values,[a]);
+const chartPreferences = {...preferences,pins:['a','b','other'],selected:['a','other'],
+ pinViews:{[L.pinKey(a)]:'compare',[L.pinKey(otherWorkload)]:'history'},
+ pinKinds:{[L.pinKey(a)]:'absolute'},
+ pinChoices:{[L.pinKey(a)+L.implementation(a)]:'a',[L.pinKey(otherWorkload)+L.implementation(otherWorkload)]:'other'},
+ pinReferences:{[L.pinKey(b)+b.set]:'b'}};
+const chartRecords=[...aliases,{...otherWorkload,shortId:'c'.repeat(24)}];
+const chartState=L.encode(chartPreferences,chartRecords);
+const chartRestored=L.decode('?tab=compare&list='+encodeURIComponent(JSON.stringify(chartState)),chartRecords);
+assert.deepEqual(chartRestored.pins,chartPreferences.pins);
+assert.deepEqual(chartRestored.pinViews,chartPreferences.pinViews);
+assert.deepEqual(chartRestored.pinKinds,chartPreferences.pinKinds);
+assert.deepEqual(chartRestored.pinChoices,chartPreferences.pinChoices);
+assert.deepEqual(chartRestored.pinReferences,chartPreferences.pinReferences);
+const previous=L.decode('?list='+encodeURIComponent(JSON.stringify(compact)),aliases);
+assert.deepEqual(previous.pinViews,{});assert.deepEqual(previous.pinChoices,{});assert.deepEqual(previous.pinReferences,{});
+assert.equal(L.historyKey([a,next],a.id),L.historyKey([next,a],a.id));
+assert.notEqual(L.historyKey([a,next],a.id),L.historyKey([a,next],next.id));
+assert.notEqual(L.historyKey([a,next],a.id),L.historyKey([a],a.id));
+console.log('Independent histories, stored pairs, exact pins, separate benchmark plots and URL restoration passed');
