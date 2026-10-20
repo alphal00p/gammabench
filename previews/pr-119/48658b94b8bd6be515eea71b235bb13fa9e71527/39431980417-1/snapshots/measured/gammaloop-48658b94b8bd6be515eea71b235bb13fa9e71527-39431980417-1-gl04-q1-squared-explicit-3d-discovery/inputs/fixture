@@ -1,0 +1,85 @@
+{
+  "card": "# Shared scalar LU card; the suite supplies the graph, process and route.\ncommands = [\n  \"import model ./assets/models/json/scalars/scalars-default.json\",\n  \"remove processes\",\n  \"set global kv global.generation.explicit_orientation_sum_only=true global.generation.evaluator.compile=false global.generation.evaluator.store_atom=false global.generation.evaluator.summed=false global.generation.evaluator.summed_function_map=false global.generation.evaluator.iterative_orientation_optimization=false global.generation.uv.subtract_uv=true global.generation.uv.generate_integrated=true global.generation.uv.local_uv_cts_from_expanded_4d_integrands=false global.generation.threshold_subtraction.enable_thresholds=true global.generation.threshold_subtraction.check_esurface_at_generation=false\",\n  \"import graphs benchmarks/performance/scalar-3l-gl04-q1-squared.dot --process-spec 'scalar_1 > {scalar_0 scalar_0, scalar_0 scalar_0 scalar_1} | scalar_0 scalar_1 [{{3}}]' -p scalar_gl04 -i numerator\",\n  \"set model mass_scalar_1=1.0\",\n  \"generate existing -p scalar_gl04 -i numerator\",\n  \"set model mass_scalar_1=0.1\",\n  \"quit\",\n]\n\n[cli_settings.global.n_cores]\nfeyngen = 1\ngenerate = 1\ncompile = 1\nintegrate = 1\n\n[default_runtime_settings.general]\nevaluator_method = \"SingleParametric\"\nenable_cache = false\ngenerate_events = true\nstore_additional_weights_in_event = true\nmu_r = 3.0\nm_uv = 20.0\nnumerator_sampling_scale = 1.0\n\n[default_runtime_settings.subtraction]\ndisable_threshold_subtraction = false\n\n[default_runtime_settings.sampling]\ngraphs = \"summed\"\norientations = \"summed\"\nlmb_multichanneling = true\nlmb_channel_weight = \"ose\"\nlmb_channels = \"summed\"\ncoordinate_system = \"spherical\"\nmapping = \"linear\"\nb = 1.0\n\n[default_runtime_settings.kinematics.externals]\ntype = \"constant\"\n\n[default_runtime_settings.kinematics.externals.data]\nmomenta = [[1.0, 0.0, 0.0, 0.0]]\nhelicities = [0]\n",
+  "corpus": {
+    "schema_version": 1,
+    "process_id": 0,
+    "integrand": "numerator",
+    "continuous_dimension": 9,
+    "discrete_dim": [],
+    "inputs": [
+      "benchmarks/performance/scalar-3l-gl04-q1-squared.dot",
+      "assets/models/json/scalars/scalars.json",
+      "assets/models/json/scalars/restrict_default.json"
+    ],
+    "points": [
+      [
+        0.1,
+        0.2,
+        0.3,
+        0.4,
+        0.5,
+        0.6,
+        0.7,
+        0.8,
+        0.9
+      ],
+      [
+        0.13,
+        0.23,
+        0.33,
+        0.43,
+        0.53,
+        0.63,
+        0.73,
+        0.83,
+        0.93
+      ],
+      [
+        0.17,
+        0.27,
+        0.37,
+        0.47,
+        0.57,
+        0.67,
+        0.77,
+        0.87,
+        0.97
+      ],
+      [
+        0.11,
+        0.21,
+        0.31,
+        0.41,
+        0.51,
+        0.61,
+        0.71,
+        0.81,
+        0.91
+      ]
+    ],
+    "process": "scalar_gl04",
+    "graph_name": "GL04"
+  },
+  "config": {
+    "schema_version": 2,
+    "pairs": 5,
+    "evaluator_methods": [
+      "SingleParametric"
+    ],
+    "reference_method": "SingleParametric",
+    "fixture_timeout_seconds": 240,
+    "bench_duration_seconds": 2.0,
+    "bench_batches": 10,
+    "required_metrics": [
+      "generation_seconds",
+      "warm_runtime_seconds_per_sample"
+    ],
+    "correctness_tolerance": {
+      "absolute": 0.0,
+      "relative": 1e-09
+    },
+    "family": "scalar"
+  },
+  "representation_hashes": {},
+  "certified_imaginary_zero": null
+}
