@@ -171,7 +171,8 @@ def write_registry(root: Path, registry: dict, expected: bytes) -> None:
 
 
 def _register_report(snapshot_paths, output: str | Path, benchmark_id: str, *,
-                    root: str | Path | None = None, baseline: str | None = None, home: str | None = None) -> dict:
+                    root: str | Path | None = None, baseline: str | None = None, home: str | None = None,
+                    navigation: dict[str, str] | None = None) -> dict:
     """Retain sealed snapshots, render a report, then register it atomically."""
     from .report import analyze, render
 
@@ -279,7 +280,7 @@ def _register_report(snapshot_paths, output: str | Path, benchmark_id: str, *,
         output.parent.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix=".report-", dir=output.parent))
         stage.rmdir()
-        render(retained, stage, baseline=baseline, home=home)
+        render(retained, stage, baseline=baseline, home=home, navigation=navigation)
         if output.exists() or output.is_symlink():
             raise FileExistsError(f"report destination appeared during rendering: {output}")
         output.mkdir()
@@ -306,7 +307,9 @@ def _register_report(snapshot_paths, output: str | Path, benchmark_id: str, *,
 
 
 def register_report(snapshot_paths, output: str | Path, benchmark_id: str, *,
-                    root: str | Path | None = None, baseline: str | None = None, home: str | None = None) -> dict:
+                    root: str | Path | None = None, baseline: str | None = None, home: str | None = None,
+                    navigation: dict[str, str] | None = None) -> dict:
     root = repository_root(root)
     with registry_lock(root):
-        return _register_report(snapshot_paths, output, benchmark_id, root=root, baseline=baseline, home=home)
+        return _register_report(snapshot_paths, output, benchmark_id, root=root, baseline=baseline, home=home,
+                                navigation=navigation)

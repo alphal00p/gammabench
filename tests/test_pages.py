@@ -68,7 +68,7 @@ class PagesTests(unittest.TestCase):
     def test_pinned_theme_and_local_css_assets_are_complete(self):
         theme = self.site / 'assets/theme'
         provenance = json.loads((theme / 'provenance.json').read_text())
-        self.assertEqual(provenance['revision'], '2e22d46aae9aa987aada970474cec266976cde5b')
+        self.assertEqual(provenance['revision'], 'c8b051ef69188803633e4ee2c5a8b6413de217fa')
         for asset in provenance['assets']:
             if 'vendored_path' not in asset:
                 continue
@@ -135,8 +135,20 @@ class PagesTests(unittest.TestCase):
                 for frozen, original in (('median', 'median'), ('min', 'minimum'), ('max', 'maximum'), ('count', 'count')):
                     self.assertEqual(record[frozen], originals[record['id']][original])
             self.assertTrue(all(r['runId'] and r['runAttempt'] for r in history))
-        redirect = ListElements((self.site / 'ci-history/index.html').read_text()).redirect
-        self.assertEqual(redirect['defaults'], {'tag': 'gammaloop-ci', 'tab': 'history'})
+        from test_ci import TrackerPage
+        directory = self.site / 'ci-history'
+        tracker = TrackerPage(directory / 'index.html').model
+        self.assertFalse(tracker['preview'])
+        for run in tracker['runs']:
+            self.assertTrue((directory / run['url']).is_file())
+            for case in run['cases']:
+                if case['evidence']:
+                    report = (directory / case['evidence']).parent
+                    original = json.loads((report / 'analysis.json').read_text())
+                    if case['discovery']:
+                        proof = original['snapshots'][0]['provenance']['ci_gate']['report']
+                        self.assertEqual(case['discovery']['delta'],
+                                         proof['metrics']['generation_seconds']['discovery']['median_relative_delta'])
 
     def test_scaffolded_benchmark_has_empty_workspace_without_fabricated_measurements(self):
         from gammabench.scaffold import create

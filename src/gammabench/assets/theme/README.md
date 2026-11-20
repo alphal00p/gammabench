@@ -1,19 +1,16 @@
-# GammaLoop Pages theme
+# αLoop website theme
 
-These assets are unchanged copies of GammaLoop's public Pages theme at
-`2e22d46aae9aa987aada970474cec266976cde5b`. `provenance.json` binds each file
-to its upstream path, complete revision and SHA-256. The same revision's
-`docs/portal/components.typ` is recorded as the reference for gammabench's
-semantic Typst components; its unused components are not copied.
+The styles, wordmarks and self-hosted fonts come from the redesigned GammaLoop
+site at `c8b051ef69188803633e4ee2c5a8b6413de217fa`. The asset manifest
+records their upstream paths and SHA-256 hashes. Keep the upstream license,
+font licenses and font and logo attribution files with the vendored assets.
 
-Keep `upstream-LICENSE` and `STIX-Two-OFL.txt` alongside the assets. Theme pins
-are independent of measured engine versions in benchmark snapshots.
+The global navigation markup in `../components.typ` uses the same classes as
+the group homepage and manual. The local `site.js` handles its menu and color
+theme for hosted pages and offline report bundles. It shares the site's
+saved theme preference. The upstream navigation sources are listed in the
+manifest for reference. Benchmark controls and charts use their own scripts.
 
-`site.css` and `site.js` own the palette, typography, responsive portal layout
-and theme switch. Benchmark-specific layout overrides live in `../report.css`.
-The upstream stylesheet imports Google Fonts for Inter, Newsreader and IBM Plex
-Mono; offline viewing uses its system-font fallbacks. The local STIX math font
-and all local CSS asset references are bundled.
-
-To update the theme, choose one complete public upstream revision, copy the
-listed files unchanged, update their provenance and verify the resulting pages.
+For a theme update, copy the files from a single upstream revision, follow
+stylesheet imports and font URLs, and update the manifest. Benchmark snapshot
+engine pins are independent of the website theme.

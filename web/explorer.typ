@@ -5,13 +5,13 @@
 #let explorer(catalog, root: "", model: none) = {
   assert(catalog.schema_version == 1, message: "Unsupported explorer catalog")
   let attrs = (
-    id: "benchmark-explorer", "aria-label": "Benchmark explorer",
+    id: "benchmark-explorer", "aria-label": "Benchmark catalog",
     "data-catalog": json.encode(catalog, pretty: false), "data-root": root,
   )
   if model != none { attrs.insert("data-list-model", json.encode(model, pretty: false)) }
   el("section", class: "benchmark-explorer", attrs: attrs)[
     #el("header", class: "explorer-heading")[
-      #el("h1")[Benchmarks]
+      #el("h1")[Benchmark catalog]
     ]
     #if model != none {
       el("section", class: "list-pinboard", attrs: (id: "list-pins", "aria-label": "Pinned measurements", hidden: ""))[]

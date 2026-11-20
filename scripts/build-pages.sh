@@ -51,6 +51,11 @@ typst compile --root "$gammabench_repo_dir" --features html,bundle --format bund
   --creation-timestamp 0 --input "catalog-path=$gammabench_catalog_relative" \
   "${gammabench_preview_inputs[@]}" \
   "$gammabench_repo_dir/web/main.typ" "$gammabench_stage"
+if [[ ! -f "$gammabench_repo_dir/web/preview.json" ]]; then
+  cp "$gammabench_repo_dir/src/gammabench/assets/"tracker.{js,css} "$gammabench_stage/assets/"
+  PYTHONPATH="$gammabench_repo_dir/src" python3 -m gammabench.ci build-main-tracker \
+    "$gammabench_repo_dir" "$gammabench_stage"
+fi
 cp "$gammabench_repo_dir/artifacts.json" "$gammabench_stage/artifacts.json"
 touch "$gammabench_stage/.nojekyll"
 mv "$gammabench_stage" "$gammabench_destination"

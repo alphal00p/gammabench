@@ -1,16 +1,85 @@
 /* Benchmark layout only; the pinned GammaLoop stylesheet owns all theme tokens. */
 .bench-main { min-width: 0; }
-.bench-section { padding: clamp(1.25rem, 3vw, 2.5rem); border-bottom: 1px solid var(--border); }
+@media (max-width: 38rem) {
+  .bench-body { --portal-gutter: 1rem; }
+  .bench-body :is(.bench-main, .portal-footer) {
+    width: 100%;
+    border-inline: 0;
+    overflow-x: clip;
+  }
+}
+.bench-main :where(h1, h2, h3) { color: var(--ink-strong); }
+.bench-shell {
+  display: grid;
+  grid-template-columns: clamp(12rem, 18vw, 15rem) minmax(0, 1fr);
+  max-width: 82rem;
+  margin-inline: auto;
+  min-height: calc(100vh - var(--header-height));
+}
+.bench-shell > .bench-main { width: 100%; margin: 0; overflow-x: clip; }
+.bench-navigation {
+  position: sticky;
+  top: var(--header-height);
+  align-self: start;
+  max-height: calc(100dvh - var(--header-height));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1.5rem 1rem 1.5rem 2rem;
+  background: linear-gradient(var(--hairline), var(--hairline)) 1rem 0 / 1px 100% no-repeat var(--canvas);
+}
+.bench-site-links, .bench-drawer-backdrop { display: none; }
+@media (max-width: 52rem) {
+  .bench-shell { display: block; }
+  .bench-navigation { position: static; }
+  .js .bench-navigation {
+    position: fixed;
+    z-index: 55;
+    inset: var(--header-height) auto 0 0;
+    width: min(18rem, calc(100% - 3rem));
+    max-height: none;
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+    align-self: stretch;
+    border-right: 1px solid var(--rail);
+  }
+  .bench-drawer-open { overflow: hidden; }
+  .js .bench-navigation[hidden] { display: none; }
+  .bench-body .portal-header .portal-nav { display: none; }
+  .bench-site-links {
+    display: block;
+    margin-top: .75rem;
+    border-top: 1px solid var(--hairline);
+    padding-top: .5rem;
+  }
+  .bench-site-links summary {
+    min-height: 44px;
+    padding: .7rem .55rem;
+    color: var(--ink-muted);
+    font: .875rem/1.4 var(--font-ui);
+    cursor: pointer;
+  }
+  .bench-drawer-backdrop:not([hidden]) {
+    display: block;
+    position: fixed;
+    z-index: 54;
+    inset: var(--header-height) 0 0;
+    width: 100%;
+    border: 0;
+    background: rgb(32 22 36 / 30%);
+  }
+  .bench-navigation .sidebar-link { display: flex; align-items: center; min-height: 44px; }
+}
+@media print {
+  .bench-shell { display: block; }
+  .bench-navigation, .bench-drawer-backdrop { display: none !important; }
+}
+.bench-section { padding: clamp(1.25rem, 3vw, 2.5rem) var(--portal-gutter); border-bottom: 1px solid var(--rail); }
 .bench-section h2 { color: var(--ink-strong); font-family: var(--font-serif); font-size: clamp(1.6rem, 3vw, 2.3rem); font-weight: 500; }
-.bench-study-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.bench-study-grid .portal-project-card { min-height: 23rem; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
-.bench-study-grid .portal-project-card:nth-child(2n) { border-right: 0; }
-.bench-study-grid .portal-project-card:last-child { grid-column: auto; }
+.bench-study-grid { padding-inline: var(--portal-gutter); }
 .subtle { color: var(--ink-muted); font-size: 0.8rem; }
 .notice { padding: 1.25rem; margin: 1.5rem 0; background: var(--surface-soft); border: 1px solid var(--hairline); }
 .controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin: 1.5rem 0; }
-.controls label { display: grid; gap: 0.35rem; min-width: 0; color: var(--ink-muted); font-family: var(--font-mono); font-size: 0.68rem; }
-.controls input, .controls select { width: 100%; min-width: 0; padding: 0.65rem; border: 1px solid var(--hairline); border-radius: var(--radius); background: var(--surface); color: var(--ink-strong); font-family: var(--font-sans); font-size: 0.82rem; }
+.controls label { display: grid; gap: 0.35rem; min-width: 0; color: var(--ink-muted); font: .8rem/1.4 var(--font-ui); }
+.controls input, .controls select { width: 100%; min-width: 0; padding: 0.65rem; border: 1px solid var(--hairline); border-radius: var(--radius); background: var(--surface); color: var(--ink-strong); font-family: var(--font-ui); font-size: 0.875rem; }
 .tablewrap { overflow: auto; border: 1px solid var(--hairline); background: var(--surface); }
 .tablewrap table { display: table; width: 100%; border-collapse: collapse; font-size: 0.75rem; }
 .tablewrap th, .tablewrap td { text-align: left; padding: 0.7rem 0.8rem; border-bottom: 1px solid var(--hairline); vertical-align: top; }
@@ -24,8 +93,7 @@
 .bench-section a { color: var(--link); }
 @media (max-width: 52rem) { .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 38rem) {
-  .controls, .bench-study-grid { grid-template-columns: 1fr; }
-  .bench-study-grid .portal-project-card { border-right: 0; }
+  .controls { grid-template-columns: 1fr; }
 }
 
 /* Colours encode the stored comparison against this workload's chosen reference. */
@@ -85,41 +153,6 @@
 .bench-section .matrix-contract { padding: 0; border: 0; margin: 0.75rem 0; background: transparent; font-size: 0.8rem; }
 .matrix-contract summary { width: fit-content; }
 
-/* One quiet monospace typeface across the benchmark site. */
-:root { --font-sans: var(--font-mono); --font-serif: var(--font-mono); }
-body { font-size: 0.85rem; line-height: 1.6; }
-.portal-brand-logo, .portal-footer-mark { display: none; }
-.portal-brand-copy strong { font-size: 1rem; font-weight: 500; letter-spacing: 0; }
-.portal-brand-copy small { font-size: 0.68rem; }
-.portal-body { --portal-header-height: 3.5rem; }
-.portal-header { backdrop-filter: none; background: var(--canvas); }
-.portal-nav a, .portal-source-link { font-size: 0.72rem; }
-.portal-page-hero, .portal-page-hero-compact { padding: 1.5rem 2rem; background: var(--canvas); }
-.portal-page-hero h1, .portal-page-hero-compact h1 { max-width: none; font-size: 1.4rem; line-height: 1.4; letter-spacing: 0; margin: 0.7rem 0; font-weight: 500; }
-.portal-page-hero > p:not(.portal-kicker) { font-size: 0.85rem; }
-.bench-section { padding: 1.5rem 2rem; }
-.bench-section h2 { font-size: 1.1rem; font-weight: 500; }
-.matrix-heading { font-size: 1rem; font-weight: 500; }
-.matrix-value { font-size: 0.95rem; }
-.portal-footer { min-height: auto; padding: 1.5rem 2rem; }
-.portal-footer strong { font-size: 0.9rem; }
-.bench-study-grid .portal-project-card { min-height: auto; padding: 1.25rem; }
-.bench-study-grid .portal-project-card h3 { font-size: 1rem; font-weight: 500; letter-spacing: 0; margin: 0.8rem 0; }
-.bench-study-grid .portal-project-card:hover { box-shadow: none; transform: none; }
-.matrix-controls label, .matrix-controls input, .matrix-controls select { font-size: 0.8rem; }
-@media (max-width: 52rem) {
-  .portal-body { --portal-header-height: 6rem; }
-  .portal-header { height: var(--portal-header-height); grid-template-columns: 1fr auto; grid-template-rows: 3.5rem 2.5rem; }
-  .portal-nav { grid-column: 1 / -1; grid-row: 2; width: 100%; }
-  .portal-header-actions { grid-column: 2; grid-row: 1; }
-  .portal-brand { grid-column: 1; grid-row: 1; }
-}
-@media (max-width: 38rem) {
-  .portal-page-hero, .portal-page-hero-compact, .bench-section, .portal-footer { padding: 1.25rem 1rem; }
-  .portal-page-hero h1, .portal-page-hero-compact h1 { font-size: 1.2rem; }
-  .matrix-controls { grid-template-columns: 1fr; }
-}
-
 /* Benchmark workspace: navigation stays small while each benchmark owns its page. */
 [hidden] { display: none !important; }
 .workspace { display: grid; grid-template-columns: 16rem minmax(0, 1fr); }
@@ -133,7 +166,7 @@ body { font-size: 0.85rem; line-height: 1.6; }
 .workspace-benchmark.is-active { color: var(--ink-strong); background: var(--surface); border-color: var(--hairline); }
 .workspace-registry { margin-top: 1.5rem; font-size: 0.65rem; }
 .workspace-main { min-width: 0; padding: 1.5rem 2rem 2rem; }
-.workspace-heading h1 { font-size: 1.2rem; line-height: 1.5; font-weight: 500; margin: 0.35rem 0 0.7rem; letter-spacing: 0; }
+.workspace-heading h1 { font-size: clamp(1.8rem, 3.5vw, 2.8rem); line-height: 1.16; font-weight: 500; margin: 0.35rem 0 0.7rem; letter-spacing: -.025em; }
 .workspace-heading > p { max-width: 75rem; font-size: 0.8rem; }
 .workspace-breadcrumb { color: var(--ink-muted); font-size: 0.7rem !important; margin: 0; }
 .workspace-tabs { display: flex; gap: 1.5rem; border-bottom: 1px solid var(--border); margin: 1.5rem 0; }
@@ -176,7 +209,6 @@ body { font-size: 0.85rem; line-height: 1.6; }
 }
 @media (max-width: 38rem) {
   .workspace-main { padding: 1rem; }
-  .workspace-heading h1 { font-size: 1rem; }
   .workspace-tabs { gap: 1.25rem; }
 }
 .history-grid { stroke: var(--hairline); stroke-width: 1; }
@@ -191,7 +223,6 @@ body { font-size: 0.85rem; line-height: 1.6; }
 .workspace a:focus-visible { outline: 2px solid var(--link); outline-offset: 3px; }
 
 /* Tool, implementation and source version are separate captured identities. */
-.portal-header { width: min(92rem, 100%); margin-inline: auto; border-inline: 1px solid var(--border); }
 .matrix-table thead th { min-width: 11rem; }
 .matrix-table thead tr:not(:first-child) th:first-child { min-width: 11rem; }
 .matrix-table .matrix-tool-heading th, .matrix-table .matrix-way-heading th { padding-block: 0.55rem; }
@@ -218,7 +249,15 @@ body { font-size: 0.85rem; line-height: 1.6; }
 @media (max-width: 38rem) {
   .matrix-hide-column { min-width: 2.75rem; min-height: 2.75rem; }
   #matrix-column-options { display: grid; grid-template-columns: minmax(0, 1fr); }
-  .portal-header { border-inline: 0; }
+}
+@media (pointer: coarse) {
+  .bench-navigation .sidebar-link { display: flex; align-items: center; min-height: 44px; }
+  .matrix-controls :is(input, select), .controls :is(input, select), .history-controls select {
+    min-height: 44px;
+    font-size: 1rem;
+  }
+  .matrix-hide-column, #matrix-show-columns { min-width: 44px; min-height: 44px; }
+  #matrix-column-options label, .matrix-columns > summary { min-height: 44px; align-content: center; }
 }
 
 :root { --history-series-0: var(--link); --history-series-1: #067977; --history-series-2: #a34d16; --history-series-3: #b12a75; --history-series-4: #24714a; --history-series-5: #6e647d; }

@@ -10,9 +10,51 @@
 #let hero(compact: false, body) = el("header", class: "portal-page-hero" + if compact { " portal-page-hero-compact" } else { "" }, body)
 #let section(body) = el("section", class: "bench-section", body)
 
+#let group-home = "https://www.alphaloop.ch/"
+#let bench-home = "https://alphal00p.github.io/gammabench/"
+
+#let brand-art(assets) = {
+  for theme in ("light", "dark") {
+    void("img", attrs: (
+      class: "site-brand-logo site-brand-logo-" + theme + " portal-graph-theme-" + theme,
+      src: assets + "theme/alphalooplogo-" + theme + ".svg", alt: "", "aria-hidden": "true",
+    ))
+  }
+}
+
+#let site-links(performance, class: none, include-benchmarks: true) = {
+  for (label, href) in (
+    ("Documentation", group-home + "libraries/"), ("Benchmarks", performance),
+    ("About", group-home + "about/"), ("People", group-home + "people/"),
+    ("Talks", group-home + "talks/"), ("Publications", group-home + "publications/"),
+  ) {
+    if label == "Benchmarks" and not include-benchmarks { continue }
+    el("a", class: class, attrs: (href: href) + if label == "Benchmarks" { ("aria-current": "page") } else { (:) }, label)
+  }
+}
+
+#let bench-navigation(home, performance, tracker, previews, current, run-id) = {
+  let run = if run-id == none { "" } else { "&run=" + run-id }
+  el("nav", class: "bench-navigation", attrs: (id: "bench-navigation", "aria-label": "Benchmark navigation"))[
+    #for (label, href) in (
+      ("Performance tracker", tracker + "?view=suite" + run),
+      ("Benchmark catalog", home),
+      ("Pull requests", previews),
+    ) {
+      el("a", class: "sidebar-link", attrs: (href: href) + if current == label { ("aria-current": "page") } else { (:) }, label)
+    }
+    #el("details", class: "bench-site-links")[
+      #el("summary")[αLoop website]
+      #site-links(performance, class: "sidebar-link", include-benchmarks: false)
+    ]
+  ]
+}
+
 #let bench-document(
   title, description, body,
-  assets: "", home: "https://alphal00p.github.io/gammabench/", interactive: false, scripts: (), styles: (), head: [],
+  assets: "", home: bench-home, performance: bench-home + "ci-history/", current: none,
+  local-performance: none, local-explorer: none, previews: bench-home + "previews/", run-id: none,
+  interactive: false, scripts: (), styles: (), head: [], search: none,
 ) = el("html", attrs: (lang: "en"))[
   #el("head")[
     #void("meta", attrs: (charset: "utf-8"))
@@ -20,7 +62,7 @@
     #void("meta", attrs: (name: "description", content: description))
     #void("meta", attrs: (name: "theme-color", content: "#f9f6f0"))
     #head
-    #el("title")[#title · gammabench]
+    #el("title")[#title · αLoop]
     #void("link", attrs: (rel: "stylesheet", href: assets + "theme/site.css"))
     #void("link", attrs: (rel: "stylesheet", href: assets + "report.css"))
     #for style in styles { void("link", attrs: (rel: "stylesheet", href: assets + style)) }
@@ -31,41 +73,45 @@
   #el("body", class: "portal-body bench-body")[
     #el("a", class: "skip-link", attrs: (href: "#main-content"))[Skip to content]
     #el("header", class: "portal-header")[
-      #el("a", class: "portal-brand", attrs: (href: home))[
-        #el("span", class: "portal-brand-logo", attrs: ("aria-hidden": "true"))[]
-        #el("span", class: "portal-brand-copy")[
-          #el("strong")[gammabench]
-          #el("small")[αLoop benchmark evidence]
-        ]
-      ]
-      #el("nav", class: "portal-nav", attrs: ("aria-label": "Primary"))[
-        #link(home)[Explore]
-        #link("https://alphal00p.github.io/gammabench/previews/")[PR previews]
-        #link("https://alphal00p.github.io/gammaloop/")[GammaLoop]
-        #link("https://github.com/alphal00p/gammabench/blob/main/docs/protocol.md")[Protocol]
+      #el("a", class: "portal-brand", attrs: (href: group-home, "aria-label": "αLoop home"))[#brand-art(assets)]
+      #el("nav", class: "portal-nav", attrs: (id: "portal-navigation", "aria-label": "Primary"))[
+        #site-links(performance)
       ]
       #el("div", class: "portal-header-actions")[
-        #el("a", class: "portal-source-link", attrs: (href: "https://github.com/alphal00p/gammabench"))[Source ↗]
+        #el("a", class: "portal-search-button", attrs: (
+          href: if search != none { search } else { home + "#explorer-keywords" },
+          "aria-label": "Search benchmarks", title: "Search benchmarks",
+        ))[#el("span", class: "header-search-icon", attrs: ("aria-hidden": "true"))[]]
         #el("button", class: "portal-theme-button", attrs: (
-          type: "button", "data-theme-toggle": "", "aria-label": "Toggle color theme",
-        ))[◐]
+          type: "button", "data-theme-toggle": "", "aria-label": "Toggle color theme", title: "Change theme",
+        ))[#el("span", attrs: ("aria-hidden": "true"))[◐]]
+        #el("button", class: "portal-menu-button", attrs: (
+          type: "button", "data-portal-menu-toggle": "", "aria-controls": "bench-navigation",
+          "aria-expanded": "false", "aria-label": "Open navigation", title: "Navigation",
+        ))[#el("span", attrs: ("aria-hidden": "true"))[☰]]
       ]
     ]
-    #el("main", class: "portal-main bench-main", attrs: (id: "main-content"))[
-      #show heading: it => el("h" + str(it.level), it.body)
-      #body
+    #el("div", class: "bench-shell")[
+      #bench-navigation(
+        if local-explorer == none { home } else { local-explorer },
+        performance, if local-performance == none { performance } else { local-performance },
+        previews, current, run-id,
+      )
+      #el("main", class: "portal-main bench-main", attrs: (id: "main-content", tabindex: "-1"))[
+        #show heading: it => el("h" + str(it.level), it.body)
+        #body
+      ]
     ]
     #el("footer", class: "portal-footer")[
       #el("div")[
-        #el("span", class: "portal-footer-mark", attrs: ("aria-hidden": "true"))[]
-        #el("p")[#el("strong")[gammabench] #el("br")[] Versioned research benchmarks]
+        #brand-art(assets)
       ]
       #el("nav", attrs: ("aria-label": "Evidence"))[
         #link("https://github.com/alphal00p/gammabench/releases/tag/v0.1.0")[Raw evidence & checksums]
         #link("https://github.com/alphal00p/gammabench/blob/main/docs/protocol.md")[Measurement protocol]
         #link("https://github.com/alphal00p/gammabench")[Source]
       ]
-      #el("p")[Original measurements, explicit contracts, and verifiable snapshots.]
+      #el("p")[Generated by gammabench.]
     ]
   ]
 ]

@@ -5,9 +5,11 @@ import shutil
 import subprocess
 import unittest
 import zipfile
+from html.parser import HTMLParser
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 import test_gate
 
@@ -21,6 +23,33 @@ from gammabench.ci import (
 from gammabench.snapshot import write_json
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class TrackerPage(HTMLParser):
+    def __init__(self, path):
+        super().__init__()
+        self.model = None
+        self.benchmark_search = None
+        self.navigation = {}
+        self._sidebar_href = None
+        self.feed(path.read_text())
+
+    def handle_starttag(self, tag, attrs):
+        data = dict(attrs)
+        if tag == "a" and data.get("aria-label") == "Search benchmarks":
+            self.benchmark_search = data["href"]
+        if tag == "a" and "sidebar-link" in data.get("class", "").split():
+            self._sidebar_href = data["href"]
+        if data.get("id") == "performance-tracker":
+            self.model = json.loads(data["data-model"])
+
+    def handle_data(self, data):
+        if self._sidebar_href and data.strip():
+            self.navigation[data.strip()] = self._sidebar_href
+
+    def handle_endtag(self, tag):
+        if tag == "a":
+            self._sidebar_href = None
 
 
 class PublicationTests(unittest.TestCase):
@@ -189,9 +218,38 @@ class PublicationTests(unittest.TestCase):
         self.assertTrue((site / "previews/pr-123/index.html").exists())
         self.assertTrue((site / "previews/index.html").exists())
         self.assertTrue((page.parent / "explore.html").exists())
-        self.assertIn('http-equiv="refresh"', page.read_text())
-        self.assertIn("explore.html?tab=history", page.read_text())
-        self.assertTrue((page.parent / "summary.html").exists())
+        tracker = TrackerPage(page).model
+        self.assertEqual(tracker["selected_run"], "10-1")
+        self.assertEqual(tracker["runs"][0]["cases"][0]["id"], "demo")
+        self.assertTrue(
+            (page.parent / tracker["runs"][0]["cases"][0]["evidence"]).is_file()
+        )
+        self.assertTrue((page.parent / tracker["explorer"]).is_file())
+        case_page = page.parent / tracker["runs"][0]["cases"][0]["evidence"]
+        previews = site / "previews/index.html"
+        for origin in (
+            page, case_page, page.parent / "explore.html", page.parent / "docs/results/index.html",
+            page.parent / "summary.html", site / "previews/pr-123/runs.html", previews,
+        ):
+            self.assertEqual((origin.parent / TrackerPage(origin).navigation["Pull requests"]).resolve(), previews, origin)
+        for origin, target, run in (
+            (case_page, page, "10-1"),
+            (page.parent / "explore.html", page, "10-1"),
+            (page.parent / "summary.html", page, "10-1"),
+            (site / "previews/pr-123/runs.html", page, None),
+            (site / "previews/index.html", site / "ci-history/index.html", None),
+        ):
+            url = urlsplit(TrackerPage(origin).navigation["Performance tracker"])
+            self.assertEqual((origin.parent / url.path).resolve(), target)
+            self.assertEqual(parse_qs(url.query), {"view": ["suite"], **({"run": [run]} if run else {})})
+        for origin in (page, page.parent / "summary.html", case_page):
+            url, anchor = TrackerPage(origin).benchmark_search.split("#")
+            self.assertEqual((origin.parent / url).resolve(), page.parent / "explore.html")
+            self.assertEqual(anchor, "explorer-keywords")
+        overview = site / "previews/pr-123/runs.html"
+        url, anchor = TrackerPage(overview).benchmark_search.split("#")
+        self.assertEqual((overview.parent / url).resolve(), site / "index.html")
+        self.assertEqual(anchor, "explorer-keywords")
         history = (page.parent / "explore.html").read_text()
         from test_inline_list import ListElements
 
@@ -202,15 +260,69 @@ class PublicationTests(unittest.TestCase):
             list((page.parent / "snapshots/measured").glob("*/files.sha256.json"))
         )
 
+    def test_tracker_names_confirmed_metric_when_generation_was_not_measured(self):
+        bundle = self.bundle(mode="slow")
+        report = json.loads((bundle / "demo/gate.json").read_text())["report"]
+        delta = report["metrics"]["seconds"]["confirmation"]["median_relative_delta"]
+        result = ingest(bundle, self.checkout, channel="pr", current_head="b" * 40)
+        site = self.root / "site"
+        site.mkdir()
+        assemble_previews(self.checkout, site, ROOT, main_root=self.checkout)
+        directory = site / result["path"]
+        case = TrackerPage(directory / "index.html").model["runs"][0]["cases"][0]
+        self.assertIsNone(case["discovery"])
+        self.assertEqual(case["status"], "regression")
+        self.assertEqual(
+            case["flagged_metrics"]["seconds"],
+            {
+                "phase": "confirmation",
+                "delta": delta,
+                "status": "regression",
+            },
+        )
+        self.assertIn(
+            f"seconds {delta:+.2%} in confirmation",
+            (directory / "summary.html").read_text(),
+        )
+
+    def test_mixed_legacy_run_keeps_confirmed_failure_and_missing_case(self):
+        bundle = self.bundle(mode="wrong")
+        failure = {"schema_version": 1, "case": "unavailable", "status": 2}
+        write_json(bundle / "unavailable/failure.json", failure)
+        manifest = json.loads((bundle / "run.json").read_text())
+        manifest["cases"].append("unavailable")
+        manifest["status"] = 2  # Legacy wire encoding takes max(1, 2).
+        write_json(bundle / "run.json", manifest)
+        result = ingest(bundle, self.checkout, channel="pr", current_head="b" * 40)
+        site = self.root / "site"
+        site.mkdir()
+        assemble_previews(self.checkout, site, ROOT, main_root=self.checkout)
+        directory = site / result["path"]
+        run = TrackerPage(directory / "index.html").model["runs"][0]
+        self.assertEqual(run["status"], "failed")
+        measured, missing = run["cases"]
+        self.assertEqual(measured["status"], "correctness")
+        self.assertGreater(measured["mismatches"], 0)
+        self.assertIsNone(measured["discovery"])
+        self.assertEqual(missing["status"], "inconclusive")
+        self.assertIsNone(missing["mismatches"])
+        for page in (
+            directory / "summary.html",
+            directory / "explore.html",
+            site / "previews/pr-123/runs.html",
+        ):
+            self.assertIn("1 correctness failure · 1 inconclusive", page.read_text())
+
     def test_main_registration_preserves_gate_failure(self):
         bundle = self.bundle(event="push", mode="wrong")
         result = ingest(bundle, self.checkout, channel="main")
         catalog = json.loads((self.checkout / "web/benchmarks.json").read_text())
         self.assertEqual(catalog["benchmarks"][0]["id"], "gammaloop-ci-demo")
-        self.assertIn(
-            "Regression or correctness failure",
-            (self.checkout / result["path"] / "index.html").read_text(),
-        )
+        summary = self.checkout / result["path"] / "index.html"
+        self.assertIn("Regression or correctness failure", summary.read_text())
+        url = urlsplit(TrackerPage(summary).navigation["Performance tracker"])
+        self.assertEqual((summary.parent / url.path).resolve(), self.checkout / "ci-history/index.html")
+        self.assertEqual(parse_qs(url.query), {"view": ["suite"], "run": ["10-1"]})
 
     def test_stale_completion_cannot_become_current_head(self):
         bundle = self.bundle()
@@ -273,8 +385,16 @@ class PublicationTests(unittest.TestCase):
         )
         self.assertTrue((site / "previews/pr-123/index.html").is_file())
         self.assertTrue((site / "previews/pr-124/index.html").is_file())
-        self.assertIn(
-            "Inconclusive", (site / index["123"]["latest"] / "index.html").read_text()
+        model = TrackerPage(site / index["123"]["latest"] / "index.html").model
+        self.assertEqual(
+            [(run["id"], run["status"], run["cases"]) for run in model["runs"]],
+            [("10-1", "inconclusive", []), ("20-1", "inconclusive", [])],
+        )
+        old = next(
+            capture for capture in index["123"]["captures"] if capture["run_id"] == 10
+        )
+        self.assertEqual(
+            len(TrackerPage(site / old["path"] / "index.html").model["runs"]), 1
         )
 
     def test_unknown_files_or_wrong_source_run_are_rejected(self):
@@ -320,6 +440,11 @@ class PublicationTests(unittest.TestCase):
         from test_inline_list import ListElements
 
         page = site / result["path"] / "explore.html"
+        main_report = page.parent / entry["reports"][0]
+        self.assertEqual(
+            TrackerPage(main_report).navigation["Performance tracker"],
+            "https://alphal00p.github.io/gammabench/ci-history/?view=suite&run=10-1",
+        )
         history = [r for r in ListElements(page.read_text()).model["records"] if r["history"]]
         self.assertEqual(
             {point["commit"] for point in history}, {"b" * 40, "c" * 40}

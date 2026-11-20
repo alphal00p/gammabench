@@ -440,7 +440,8 @@ def _csv(path: Path, fields: list[str], rows: Any) -> None:
         writer.writerows(rows)
 
 
-def render(snapshot_paths: Any, output: str | os.PathLike[str], *, baseline: str | None = None, home: str | None = None) -> dict[str, Any]:
+def render(snapshot_paths: Any, output: str | os.PathLike[str], *, baseline: str | None = None,
+           home: str | None = None, navigation: dict[str, str] | None = None) -> dict[str, Any]:
     """Write a new, offline report directory; an existing destination is an error."""
     analysis = analyze(snapshot_paths, baseline=baseline)
     directory = Path(output).resolve()
@@ -468,8 +469,13 @@ def render(snapshot_paths: Any, output: str | os.PathLike[str], *, baseline: str
         "snapshot_id", "case", "engine", "variant", "task", "stage", "status", "origin", "repeat",
         "timeout_seconds", "duration_ns", "reason", "timing_interpretation",
     ], analysis["availability"])
+    presentation = _presentation(analysis, directory)
+    if home:
+        presentation["home"] = home
+    if navigation:
+        presentation["navigation"] = navigation
     (directory / "presentation.json").write_text(
-        json.dumps({**_presentation(analysis, directory), **({"home": home} if home else {})}, indent=2, sort_keys=True, allow_nan=False) + "\n",
+        json.dumps(presentation, indent=2, sort_keys=True, allow_nan=False) + "\n",
         encoding="utf-8")
     assets = resources.files("gammabench").joinpath("assets")
     for name in ("report.typ", "matrix.typ", "components.typ", "rendering.json", "report.css", "report.js", "theme"):

@@ -17,6 +17,7 @@ from .gate import comparator, measurement, phase_pairs, validate_policy
 from .registry import checkout_path, plan_benchmark, register_report, validate_registry
 from .schema import IDENTIFIER, REVISION
 from .snapshot import load, sha256, verify, write_json
+from .tracker import counts_text, run_outcome, summary, tracker_page, tracker_run
 
 REPOSITORY = "alphal00p/gammaloop"
 
@@ -170,18 +171,24 @@ def validate_bundle(bundle, expected=None):
     return run, captures, files
 
 
-def render_index(data, destination, *, assets, home):
+def render_index(data, destination, *, assets, home, template="ci", site_root=None):
     from .report import _typst
 
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="gammabench-ci-index-") as temporary:
         root = Path(temporary)
-        for name in ("ci.typ", "components.typ"):
+        templates = [f"{template}.typ", "components.typ"]
+        if template == "tracker":
+            templates.append("matrix.typ")
+        for name in templates:
             (root / name).write_bytes(
                 resources.files("gammabench").joinpath("assets", name).read_bytes()
             )
-        write_json(root / "ci.json", {**data, "assets": assets, "home": home})
+        page = {**data, "assets": assets, "home": home}
+        if site_root is not None:
+            page["previews_url"] = os.path.relpath(site_root / "previews/index.html", destination.parent)
+        write_json(root / f"{template}.json", page)
         subprocess.run(
             [
                 _typst(),
@@ -194,14 +201,14 @@ def render_index(data, destination, *, assets, home):
                 "html",
                 "--creation-timestamp",
                 "0",
-                str(root / "ci.typ"),
+                str(root / f"{template}.typ"),
                 str(destination),
             ],
             check=True,
         )
 
 
-def _register(root, case, snapshots, capture_id, *, preview=False):
+def _register(root, case, snapshots, capture_id, *, run_id, previews_index=None):
     if not snapshots:
         return None
     definition = json.loads((snapshots[0] / "suite.json").read_text())
@@ -226,13 +233,22 @@ def _register(root, case, snapshots, capture_id, *, preview=False):
         )
         write_json(registry_path, registry)
     relative = "docs/results/" + capture_id + "-" + case
+    # Main evidence is also copied into PR previews, where its main run still
+    # belongs to the canonical tracker. A PR capture travels with its tracker.
+    navigation = {"run": run_id}
+    home = None
+    if previews_index is not None:
+        home = os.path.relpath(root / "explore.html", root / relative)
+        navigation["tracker"] = os.path.relpath(root / "index.html", root / relative)
+        navigation["previews"] = os.path.relpath(previews_index, root / relative)
     register_report(
         snapshots,
         root / relative,
         benchmark,
         root=root,
         baseline="baseline",
-        home=os.path.relpath(root / "index.html", root / relative) if preview else None,
+        home=home,
+        navigation=navigation,
     )
     return relative + "/index.html"
 
@@ -283,7 +299,9 @@ def ingest(bundle, root, *, channel, current_head=None, expected=None):
     rows = []
     for case, snapshots, status in captures:
         report = _register(
-            content, case, snapshots, capture_id, preview=channel == "pr"
+            content, case, snapshots, capture_id,
+            run_id=f"{ci['run_id']}-{ci['run_attempt']}",
+            previews_index=root / "previews/index.html" if channel == "pr" else None,
         )
         subjects = (
             load(snapshots[0])["provenance"]["ci_gate"]["identity"]
@@ -320,8 +338,9 @@ def ingest(bundle, root, *, channel, current_head=None, expected=None):
             if row["href"]:
                 row["href"] = os.path.relpath(root / row["href"], receipt.parent)
         render_index(
-            data,
+            {**data, "local_tracker": os.path.relpath(root / "ci-history/index.html", receipt.parent)},
             receipt.with_name("index.html"),
+            site_root=root,
             assets="../../../../assets/",
             home="../../../../index.html",
         )
@@ -353,6 +372,45 @@ def ingest(bundle, root, *, channel, current_head=None, expected=None):
         entry["latest"] = eligible[-1]["path"] if eligible else None
         write_json(index_path, index)
     return {"status": "registered", "path": relative.as_posix()}
+
+
+def build_main_tracker(content, destination):
+    """Generate the tracker from published main runs, separate from PR history."""
+    runs = []
+    for path in (content / "docs/results/ci-runs").glob("*/run.json"):
+        data = json.loads(path.read_text())
+        ci = validate_identity(data["ci"])
+        if ci["event"] != "push" or ci.get("pr") is not None:
+            raise ValueError("Non-main capture in main tracker")
+        directory = path.parent.relative_to(content)
+        run = tracker_run(content, Path("."), directory / "index.html", data)
+        runs.append((ci["run_id"], ci["run_attempt"], run))
+        render_index(
+            summary(data, run, directory),
+            destination / directory / "index.html",
+            site_root=destination,
+            assets="../../../../assets/",
+            home="../../../../index.html",
+        )
+    runs = [run for _, _, run in sorted(runs)]
+    directory = Path("ci-history")
+    model = tracker_page(
+        runs,
+        selected=runs[-1]["id"] if runs else None,
+        directory=directory,
+        explorer="../index.html?tag=gammaloop-ci&tab=history",
+    )
+    render_index(
+        model,
+        destination / directory / "index.html",
+        site_root=destination,
+        template="tracker",
+        assets="../assets/",
+        home="../index.html",
+    )
+    # Standalone Pages builds can be opened before the PR archive is assembled.
+    if not (destination / "previews/index.html").exists():
+        render_previews_index(destination, [], include_published_link=True)
 
 
 def prepare_preview(source, checkout, main_root):
@@ -453,7 +511,10 @@ def assemble_previews(data_root, destination, framework, *, main_root=None):
         if not number.isdecimal() or int(number) <= 0:
             raise ValueError("Invalid PR preview identity")
         rows = []
-        for capture in pr["captures"]:
+        history = []
+        for capture in sorted(
+            pr["captures"], key=lambda item: (item["run_id"], item["run_attempt"])
+        ):
             relative = Path(capture["path"])
             expected = (
                 Path("previews")
@@ -479,9 +540,22 @@ def assemble_previews(data_root, destination, framework, *, main_root=None):
                 (checkout / "flake.nix").write_text("{}\n")
                 target = destination / relative
                 data = json.loads((source / "run.json").read_text())
+                ci = validate_identity(data["ci"])
+                if (
+                    ci["pr"] != int(number)
+                    or ci["event"] != "pull_request"
+                    or any(
+                        ci[key] != capture[key]
+                        for key in ("candidate", "baseline", "run_id", "run_attempt")
+                    )
+                ):
+                    raise ValueError("Preview index does not match its retained run")
+                run = tracker_run(source, relative, relative / "summary.html", data)
+                history.append(run)
                 preview = {
-                    "ci": data["ci"],
-                    "status": data["status"],
+                    "ci": ci,
+                    "status": run_outcome(data["rows"]),
+                    "headline": counts_text(run),
                     "snapshots": proposals,
                     "missing_cases": [
                         row["title"] for row in data["rows"] if not row["href"]
@@ -511,31 +585,37 @@ def assemble_previews(data_root, destination, framework, *, main_root=None):
                         framework / "src/gammabench/assets/report.css",
                         target / "assets/report.css",
                     )
-                for row in data["rows"]:
-                    if row["href"]:
-                        row["href"] = (
-                            "explore.html?benchmark=gammaloop-ci-"
-                            + row["title"]
-                            + "&case=" + row["title"] + "&tab=history"
-                        )
-                render_index(
-                    data,
-                    target / "summary.html",
-                    assets="assets/",
-                    home="explore.html"
+                explorer = (
+                    "explore.html"
                     if registry["benchmarks"]
-                    else "../../index.html",
+                    else "../../../../index.html"
+                )
+                for asset in ("tracker.js", "tracker.css"):
+                    shutil.copyfile(
+                        framework / "src/gammabench/assets" / asset,
+                        target / "assets" / asset,
+                    )
+                render_index(
+                    summary(data, run, relative),
+                    target / "summary.html",
+                    site_root=destination,
+                    assets="assets/",
+                    home=explorer,
+                )
+                model = tracker_page(
+                    history,
+                    directory=relative,
+                    pr=int(number),
+                    selected=run["id"],
+                    explorer=explorer,
                 )
                 render_index(
-                    {
-                        **data,
-                        "redirect": "explore.html?tab=history"
-                        if registry["benchmarks"]
-                        else "summary.html",
-                    },
+                    model,
                     target / "index.html",
+                    site_root=destination,
                     assets="assets/",
-                    home="summary.html",
+                    home=explorer,
+                    template="tracker",
                 )
             rows.append(
                 {
@@ -546,7 +626,8 @@ def assemble_previews(data_root, destination, framework, *, main_root=None):
                         Path("previews") / ("pr-" + number)
                     ).as_posix()
                     + "/index.html",
-                    "status": capture["status"],
+                    "status": run_outcome(data["rows"]),
+                    "outcome": counts_text(run),
                     "candidate": capture["candidate"],
                     "baseline": capture["baseline"],
                 }
@@ -555,39 +636,57 @@ def assemble_previews(data_root, destination, framework, *, main_root=None):
             "title": "GammaLoop PR #" + number,
             "rows": list(reversed(rows)),
             "preview": True,
+            "local_tracker": rows[-1]["href"] if rows else "../../ci-history/index.html",
         }
-        render_index(
-            landing,
-            destination / "previews" / ("pr-" + number) / "runs.html",
-            assets="../../assets/",
-            home="../index.html",
-        )
         latest = pr.get("latest")
         if latest is not None:
             if latest not in {capture["path"] for capture in pr["captures"]}:
                 raise ValueError("Latest preview does not name a retained capture")
-            landing["redirect"] = (
+            landing["local_tracker"] = (
                 Path(latest).relative_to(Path("previews") / ("pr-" + number)).as_posix()
                 + "/index.html"
             )
         render_index(
             landing,
-            destination / "previews" / ("pr-" + number) / "index.html",
+            destination / "previews" / ("pr-" + number) / "runs.html",
+            site_root=destination,
             assets="../../assets/",
-            home="../index.html",
+            home="../../index.html",
+        )
+        if latest is not None:
+            landing["redirect"] = landing["local_tracker"]
+        render_index(
+            landing,
+            destination / "previews" / ("pr-" + number) / "index.html",
+            site_root=destination,
+            assets="../../assets/",
+            home="../../index.html",
         )
         overview.append(
             {
                 "title": "PR #" + number,
                 "href": "pr-" + number + "/index.html",
+                "detail": f"{len(rows)} recorded run" + ("" if len(rows) == 1 else "s"),
                 "status": None,
                 "candidate": "",
                 "baseline": "",
             }
         )
+    render_previews_index(destination, overview)
+
+
+def render_previews_index(destination, overview, *, include_published_link=False):
     render_index(
-        {"title": "GammaLoop PR previews", "rows": overview, "preview": True},
+        {
+            "title": "Pull requests",
+            "rows": overview,
+            "preview": True,
+            "previews_index": True,
+            "include_published_link": include_published_link,
+            "local_tracker": "../ci-history/index.html",
+        },
         destination / "previews/index.html",
+        site_root=destination,
         assets="../assets/",
         home="../index.html",
     )
@@ -606,6 +705,9 @@ def main():
     assemble.add_argument("data", type=Path)
     assemble.add_argument("destination", type=Path)
     assemble.add_argument("--framework", type=Path, required=True)
+    tracker = commands.add_parser("build-main-tracker")
+    tracker.add_argument("content", type=Path)
+    tracker.add_argument("destination", type=Path)
     args = parser.parse_args()
     if args.command == "ingest":
         print(
@@ -619,6 +721,8 @@ def main():
                 )
             )
         )
+    elif args.command == "build-main-tracker":
+        build_main_tracker(args.content, args.destination)
     else:
         assemble_previews(args.data, args.destination, args.framework)
 

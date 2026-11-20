@@ -14,7 +14,8 @@ protocol can host integration, symbolic algebra, tensor contraction, drawing,
 compilation and other measurements.
 
 GammaLoop CI uses `gammabench gate` for fresh paired performance checks. Main
-captures join the benchmark history; premerge captures have separate
+captures join the [performance tracker](https://alphal00p.github.io/gammabench/ci-history/).
+Premerge captures have separate
 [PR previews](https://alphal00p.github.io/gammabench/previews/). See the
 [CI gate and publication protocol](docs/ci.md) for local execution, private
 adapter outputs, publishing credentials, and recovery.
@@ -227,16 +228,18 @@ snapshot, phase and measurement, sharing report links and capture metadata.
 Every measured source retains its own identity and qualification. Display numbers preserve
 the original binary64 serialization through the Typst rendering boundary.
 
-CI history follows only each run's candidate discovery measurement. Baselines and
-independent confirmations stay in Compare and Evidence. PR previews open the
-same list in History and include published main history plus the capture's
-clearly marked proposed candidate. **Run summary** and **All runs for this PR**
-retain gate outcomes and earlier captures. Preview measurements do not enter
-main's catalog; merging triggers a fresh main measurement.
+History in the benchmark explorer follows each run's candidate discovery
+measurement. Baselines and independent confirmations stay in Compare and
+Evidence. The **Performance tracker** opens the latest main run. Select a workload
+to see its history, or select **Run results** to return to the chosen run.
+Under **Pull requests**, each capture opens its results with history through that
+run. Its **Benchmark catalog** includes main history and the proposed candidate.
+Preview measurements stay separate from main's catalog. Merging triggers
+a fresh main measurement.
 
 Dedicated benchmark browsing pages are retired. Existing `/benchmarks/ID/` URLs
 redirect to the corresponding list selection while retaining query and fragment
-state. `/ci-history/` opens the list filtered by the GammaLoop CI tag. Old root
+state. `/ci-history/` opens the main performance tracker. Old root
 selection links also work. Original complete reports under `docs/results/CAPTURE/`
 remain immutable evidence at their existing URLs.
 

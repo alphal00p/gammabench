@@ -1,4 +1,4 @@
-#import "components.typ": el, bench-document, hero, kicker, section
+#import "components.typ": el, bench-document, bench-home, hero, kicker, section
 #import "matrix.typ": comparison-matrix
 #{
 // Measurements and gates are computed offline. Typst owns their presentation.
@@ -60,11 +60,16 @@ let default-baseline = if analysis.baseline != none {
   else if available.contains("engine:linnet") { "engine:linnet" } else { "" }
 let evidence-links(links) = links.map(item =>
   el("a", attrs: (href: item.href), item.label)).join([ · ])
+let navigation = presentation.at("navigation", default: (:))
 bench-document(
   "Benchmark evidence",
   "Verified snapshots, explicit work contracts and paired comparisons",
   interactive: true,
   home: presentation.at("home", default: "https://alphal00p.github.io/gammabench/"),
+  local-performance: navigation.at("tracker", default: none),
+  run-id: navigation.at("run", default: none),
+  current: if navigation.at("run", default: none) != none { "Performance tracker" } else { "Benchmark catalog" },
+  previews: navigation.at("previews", default: bench-home + "previews/"),
 )[
 #hero(compact: true)[
   #kicker[Captured measurements · source evidence]
@@ -236,7 +241,7 @@ lower bound on a different measured stage.
   ])
 }
 
-#el("footer", [Generated offline by gammabench. Exported HTML, CSV and JSON share
+#el("footer", [Exported HTML, CSV and JSON share
   the same analysis values. Source snapshots are never changed. The retained
   #el("a", attrs: (href: "report.typ"), [report Typst source]),
   #el("a", attrs: (href: "matrix.typ"), [matrix Typst source]) and

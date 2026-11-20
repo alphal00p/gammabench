@@ -130,7 +130,16 @@ solid lines, failed or missing captures retain their evidence, and CI host-only
 changes have dotted **Runner changed** connectors. Retained paired baseline ratios
 assess software changes; independent history points do not establish a speedup.
 
-PR links open this same list in History and include the published main history.
+The [main performance tracker](https://alphal00p.github.io/gammabench/ci-history/)
+opens the latest run results. Select a workload to see its history and original
+report. PR links open the exact capture's run results and include that PR's
+earlier captures. The time view
+shows discovery medians. Paired change comes from the retained gate statistic.
+The case decision uses confirmation when available. The run gives counts of
+regressions, correctness failures and inconclusive cases even for historical
+mixed runs whose wire status was inconclusive.
+
+**Benchmark explorer** opens the full list with published main history.
 Hollow diamonds marked **Proposed PR #N** distinguish the PR candidate. A dashed
 connector leads to the actual measured base only when it exists in the same
 measurement context. Comparisons within the candidate use that candidate as the
@@ -154,9 +163,8 @@ this PR** lists older captures, and **Run summary** retains gate outcomes, sourc
 commits and each case's actual measured identities. Archived previews compose
 main's currently published CI history with their own proposed capture. Preview
 catalogs and sealed evidence remain separate from main; the combined list is a
-build artifact. Existing benchmark and `/ci-history/` browsing links redirect to
-list selections with their query state preserved; original reports retain their
-URLs. After merge, main records a fresh measurement under its actual commit.
+build artifact. Former benchmark pages and saved explorer queries keep their selections.
+Original reports retain their URLs. After merge, main records a fresh measurement under its actual commit.
 
 Each publication commits atomically, retries Git push races against the latest
 branch, rejects conflicting duplicate identities, and accepts identical retries.
