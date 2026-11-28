@@ -1,0 +1,60 @@
+{
+  "card": "# Two-loop gluon self-energy GL1 in thermodynamic equilibrium at finite muB.\n# Its quark loop and triple-gluon vertex supply QCD numerators with thermal\n# weights. Without vacuum subtraction the two-loop forest nests both\n# overlapping one-loop counterterms. Integrated addbacks would more than\n# triple generation time, beyond the case budget, so only local terms are built.\ncommands = [\n  \"import model sm-thermal\",\n  \"remove processes\",\n  \"import graphs benchmarks/performance/gluon-self-energy-gl1.dot --process-spec 'g > g [{2}] | g u' -p double_triangle -i 2L\",\n  \"generate existing -p double_triangle -i 2L\",\n  \"quit\",\n]\n\n[default_runtime_settings.sampling]\ngraphs = \"monte_carlo\"\norientations = \"summed\"\nlmb_multichanneling = true\nlmb_channels = \"monte_carlo\"\ncoordinate_system = \"spherical\"\nmapping = \"linear\"\nb = 1.0\n\n[default_runtime_settings.subtraction]\ndisable_threshold_subtraction = true\n\n[cli_settings.global.generation.medium]\nmode = \"thermodynamic_equilibrium\"\nvacuum_subtraction = false\n\n[cli_settings.global.generation.uv]\nsubtract_uv = true\nsoftct = false\ngenerate_integrated = false\n\n[cli_settings.global.n_cores]\nfeyngen = 1\ngenerate = 1\n\n[cli_settings.global.generation.tropical_subgraph_table]\ndisable_tropical_generation = true\n\n[cli_settings.global.generation.evaluator]\niterative_orientation_optimization = false\nstore_atom = false\ncompile = false\nsummed = false\nsummed_function_map = true\ndo_algebra = true\ndo_fn_map_replacements = false\n\n[cli_settings.global.generation.threshold_subtraction]\nenable_thresholds = false\ncheck_esurface_at_generation = false\n\n[default_runtime_settings.general]\nevaluator_method = \"SingleParametric\"\nenable_cache = false\ninverse_temperature = 1.0\nm_uv = 1.0\nmu_r = 2.0\nrenormalization_localization_scale = 2.0\n\n[default_runtime_settings.model]\naS = [1.0, 0.0]\nmuB = [3.0, 0.0]\n\n[default_runtime_settings.kinematics]\ne_cm = 1.0\n\n[default_runtime_settings.kinematics.externals]\ntype = \"constant\"\n\n[default_runtime_settings.kinematics.externals.data]\nmomenta = [[1.0, 0.0, 0.0, 0.5], \"dependent\"]\nhelicities = [1, 1]\n\n[default_runtime_settings.stability]\nrotation_axis = []\n",
+  "corpus": {
+    "process_id": 0,
+    "integrand": "2L",
+    "continuous_dimension": 6,
+    "discrete_dim": [
+      0,
+      0
+    ],
+    "inputs": [
+      "benchmarks/performance/gluon-self-energy-gl1.dot"
+    ],
+    "points": [
+      [
+        0.3684805278343727,
+        0.20242350926484026,
+        0.48242524836619227,
+        0.3919994435419629,
+        0.14345675651437087,
+        0.47075342347077187
+      ],
+      [
+        0.23,
+        0.31,
+        0.41,
+        0.53,
+        0.67,
+        0.79
+      ]
+    ],
+    "process": "double_triangle",
+    "graph_name": "GL1"
+  },
+  "config": {
+    "schema_version": 2,
+    "pairs": 5,
+    "evaluator_methods": [
+      "SingleParametric",
+      "SummedFunctionMap"
+    ],
+    "reference_method": "SingleParametric",
+    "fixture_timeout_seconds": 240,
+    "bench_duration_seconds": 0.75,
+    "bench_batches": 10,
+    "required_metrics": [
+      "generation_seconds",
+      "evaluator_build_seconds",
+      "warm_runtime_seconds_per_sample",
+      "generation_peak_ram_bytes"
+    ],
+    "correctness_tolerance": {
+      "absolute": 1e-14,
+      "relative": 1e-09
+    },
+    "family": "thermal"
+  },
+  "representation_hashes": {},
+  "certified_imaginary_zero": null
+}
